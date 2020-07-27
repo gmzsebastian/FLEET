@@ -8,7 +8,7 @@ setup(name='FLEET',
       author_email=['sgomez@cfa.harvard.edu'],
       license='GNU GPL 3.0',
       packages=['FLEET'],
-      package_data={'FLEET': ['training_set/', 'classification_catalog.dat']},
+      package_data={'FLEET': ['training_set/*.txt', 'classification_catalog.dat']},
       include_package_data=True,
       install_requires=[
         'numpy',

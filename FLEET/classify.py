@@ -1,11 +1,12 @@
-from imblearn.over_sampling import SMOTE
+from FLEET.transient import get_transient_info, generate_lightcurve, ignore_data
+from FLEET.catalog import get_catalog, catalog_operations, get_best_host
 from sklearn.ensemble import RandomForestClassifier
-import numpy as np
-from astropy import table
 from astropy.coordinates import Distance
-from transient import get_transient_info, generate_lightcurve, ignore_data
-from catalog import get_catalog, catalog_operations, get_best_host
-from lightcurve import fit_linex
+from imblearn.over_sampling import SMOTE
+from FLEET.lightcurve import fit_linex
+from astropy import table
+import pkg_resources
+import numpy as np
 
 def redshift_magnitude(magnitude, redshift, sigma = 0):
     """
@@ -136,7 +137,8 @@ def create_training_testing(features_table, training_days = 20, model = 'single'
     '''
 
     # Import Data
-    training_table_in = table.Table.read('training_set/center_table_%s_%s.txt'%(training_days, model), format = 'ascii')
+    table_name = pkg_resources.resource_filename(__name__, 'training_set/center_table_%s_%s.txt'%(training_days, model))
+    training_table_in = table.Table.read(table_name, format = 'ascii')
 
     # Remove bad objects from training sample
     bad = ['2020cui','2019lwy','2019cvi','2018jsc','2005bf' ,'2005gi' ,'2007ib' ,'2008aq' ,

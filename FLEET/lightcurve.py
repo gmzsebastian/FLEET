@@ -1,5 +1,5 @@
-import numpy as np
 from astropy import table
+import numpy as np
 import emcee
 
 def linex(x, amplitude, amplitude2, offset, magnitude):
