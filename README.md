@@ -8,6 +8,7 @@ In order to use FLEET you will need to have two keys in your system. One to quer
 /Users/username/3PI_key.txt
 /Users/username/tns_key.txt
 ```
+You can request one from https://mastweb.stsci.edu/ps1casjobs/home.aspx and https://wis-tns.weizmann.ac.il/, respectively.
 
 FLEET needs dust maps to calculate the extinction to each target, for that you will need to install `dustmaps`, in the terminal install through pip:
 
@@ -35,19 +36,20 @@ pip install git+git://github.com/rlwastro/mastcasjobs@master
 Assuming you have your 3PI and TNS keys set up, simply run the `main_assess` function on the transient of your choice.
 
 ```
-data_table_best = main_assess('ZTF19acaiylt', '08:06:54.3654', '+39:00:23.8252')
+P_SLSN = predict_SLSN('ZTF19acaiylt', '08:06:54.3654', '+39:00:23.8252')
 ```
 
 If you don't have a name AND coordinates, you can specify either of them and the function will search in ZTF and TNS for the name of a corresponding set of coordiantes, or vice-versa. Just keep in mind that it will be a little slower.
 
-The `main_assess` function will generate several folders:
-* catalogs has the catalog of nearby sources for each transient
-* images has the 3PI cutout image of each transient
-* lightcurves has the appended lists of light curve information for each transient
-* output_plots has the plots that were generated with all the necessary information
-* ztf has the ztf light curves
+The `predict_SLSN` function will generate several folders:
+* catalogs/ has the catalog of nearby sources for each transient
+* lightcurves/ has the appended lists of light curve information for each transient
+* osc/ has the photometry from the Open Supernova Catalog
+* ztf/ has the photometry from ZTF
+* ignore/ is where the individual ignore files are stored
+* photometry/ is where you store your own photometry
 
-Additionally the function will search for the `osc` and `FLWO` directories for data from the Open Supernova Catalog or your own photometry in `FLWO`. You can use the `querry_multiple_osc` function to automatically download OSC data.
+You can use the `querry_multiple_osc` function to automatically download OSC data in bulk instead of individually quering each object.
 
 
 
