@@ -317,7 +317,7 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
     data_catalog = catalog_operations(data_catalog_out, ra_deg, dec_deg, Pcc_filter, Pcc_filter_alternative, neighbors)
 
     ##### Find the Best host #####
-    host_radius, host_separation, host_Pcc, host_magnitude = get_best_host(data_catalog, star_separation, star_cut)
+    host_radius, host_separation, host_Pcc, host_magnitude, photoz, photoz_err, specz, specz_err = get_best_host(data_catalog, star_separation, star_cut)
 
     ##### Get Features #####
     features_table = create_features(object_name, red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, model_color, bright_mjd, first_mjd, green_brightest, red_brightest, host_radius, host_separation, host_Pcc, host_magnitude, hostless_cut, redshift)

@@ -345,9 +345,13 @@ def query_SDSS(ra_deg, dec_deg, search_radius = 1.0, timeout=60.0):
                p.modelMag_i, -- Better of DeV/Exp magnitude fit
                p.modelMag_z, -- Better of DeV/Exp magnitude fit
                pz.z, -- Photometric redshift
-               pz.zErr -- Error on the photometric redshift
-                 FROM PhotoObj AS p , dbo.fGetNearbyObjEq(%s, %s, %s) AS n LEFT JOIN Photoz AS pz ON pz.objID = n.objID WHERE n.objID = p.objID
-                 """
+               pz.zErr, -- Error on the photometric redshift
+               s.z, -- Spectroscopic redshift
+               s.zErr -- Error on the Spectroscopic redshift
+               FROM PhotoObj AS p , dbo.fGetNearbyObjEq(%s, %s, %s) AS n
+               LEFT JOIN SpecPhotoAll s on n.objID=s.objID
+               LEFT JOIN Photoz AS pz ON pz.objID = n.objID WHERE n.objID = p.objID
+               """
 
     # Query the data, attempt twice
     print('Querying SDSS ...')
@@ -370,6 +374,9 @@ def query_SDSS(ra_deg, dec_deg, search_radius = 1.0, timeout=60.0):
         if catalog_SDSS['z'].dtype == bool:
             catalog_SDSS['z'] = table.Column(np.nan * np.ones(len(catalog_SDSS)))
             catalog_SDSS['zErr'] = table.Column(np.nan * np.ones(len(catalog_SDSS)))
+        if catalog_SDSS['z1'].dtype == bool:
+            catalog_SDSS['z1'] = table.Column(np.nan * np.ones(len(catalog_SDSS)))
+            catalog_SDSS['zErr1'] = table.Column(np.nan * np.ones(len(catalog_SDSS)))
 
         # Clean up SDSS's empty cells
         catalog_SDSS = make_nan(catalog_SDSS)
@@ -503,8 +510,8 @@ def get_catalog(object_name, ra_deg, dec_deg, search_radius = 1.0, dust_map = 'S
         os.system("mkdir catalogs")
 
     # Catalog name
-    catalog_name = 'catalogs/*%s.cat'%object_name
-    catalog_files = glob.glob(catalog_name)
+    catalog_name = 'catalogs/%s.cat'%object_name
+    catalog_files = glob.glob('catalogs/*%s.cat'%object_name)
     if (len(catalog_files) == 0) | reimport_catalog:
         # Attempt to query everything twice
         try:
@@ -524,7 +531,7 @@ def get_catalog(object_name, ra_deg, dec_deg, search_radius = 1.0, dust_map = 'S
         print('Wrote ', catalog_name)
     # Import existing catalog
     else:
-        data_catalog_out = table.Table.read(catalog_name, format='ascii', guess=False)
+        data_catalog_out = table.Table.read(catalog_files[0], format='ascii', guess=False)
 
     return data_catalog_out
 
@@ -997,4 +1004,9 @@ def get_best_host(data_catalog, star_separation = 1, star_cut = 0.1):
     host_Pcc        = data_catalog['chance_coincidence' ][best_host]
     host_magnitude  = data_catalog['effective_magnitude'][best_host]
 
-    return host_radius, host_separation, host_Pcc, host_magnitude
+    photoz          = data_catalog['z_sdss'][best_host]
+    photoz_err      = data_catalog['zErr_sdss'][best_host]
+    specz           = data_catalog['z1_sdss'][best_host]
+    specz_err       = data_catalog['zErr1_sdss'][best_host]
+
+    return host_radius, host_separation, host_Pcc, host_magnitude, photoz, photoz_err, specz, specz_err
