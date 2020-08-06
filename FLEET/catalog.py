@@ -11,6 +11,7 @@ import requests
 import warnings
 import pathlib
 import glob
+import time
 import os
 
 def angular_separation(lon1, lat1, lon2, lat2):
@@ -1004,9 +1005,12 @@ def get_best_host(data_catalog, star_separation = 1, star_cut = 0.1):
     host_Pcc        = data_catalog['chance_coincidence' ][best_host]
     host_magnitude  = data_catalog['effective_magnitude'][best_host]
 
-    photoz          = data_catalog['z_sdss'][best_host]
-    photoz_err      = data_catalog['zErr_sdss'][best_host]
-    specz           = data_catalog['z1_sdss'][best_host]
-    specz_err       = data_catalog['zErr1_sdss'][best_host]
+    if 'z_sdss' in data_catalog.colnames:
+        photoz          = data_catalog['z_sdss'][best_host]
+        photoz_err      = data_catalog['zErr_sdss'][best_host]
+        specz           = data_catalog['z1_sdss'][best_host]
+        specz_err       = data_catalog['zErr1_sdss'][best_host]
+    else:
+        photoz = photoz_err = specz = specz_err = np.nan
 
     return host_radius, host_separation, host_Pcc, host_magnitude, photoz, photoz_err, specz, specz_err
