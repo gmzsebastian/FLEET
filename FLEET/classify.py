@@ -4,6 +4,7 @@ from sklearn.ensemble import RandomForestClassifier
 from astropy.coordinates import Distance
 from imblearn.over_sampling import SMOTE
 from FLEET.lightcurve import fit_linex
+from FLEET.plot import make_plot
 from astropy import table
 import pkg_resources
 import numpy as np
@@ -113,13 +114,14 @@ def create_features(object_name, red_amplitude, red_amplitude2, red_offset, red_
 
     return features_table
 
-def create_training_testing(features_table, training_days = 20, model = 'single', clean = 0, feature_set = 13, sorting_state = 42, SMOTE_state = 42, clf_state = 42, n_estimators = 100, max_depth = 7):
+def create_training_testing(object_name, features_table, training_days = 20, model = 'single', clean = 0, feature_set = 13, sorting_state = 42, SMOTE_state = 42, clf_state = 42, n_estimators = 100, max_depth = 7, hostless_cut = 0.1):
     '''
     Import the training set and modify the features_table according to the model
     parameters specified.
 
     Parameters
     -------------
+    object_name    : Name of the object to exclude from training set
     features_table : Astropy table with all the features of the new transient
     training_days  : What data set to use for training
     model          : Which model to use for training, single or double
@@ -130,6 +132,7 @@ def create_training_testing(features_table, training_days = 20, model = 'single'
     clf_state      : Seed number for classifier
     n_estimators   : Number of trees
     max_depth      : Depth of trees
+    hostless_cut   : Only consider hosts with a Pcc lower than this
 
     Return
     ---------------
@@ -146,7 +149,7 @@ def create_training_testing(features_table, training_days = 20, model = 'single'
            '2013fs' ,'2016X'  ,'2018cyg','2018epm','2018fjw','2018fii','2018fuw','2018gvt',
            '2018imj','2018lcd','2019B'  ,'2019bvq','2019cda','2019ci' ,'2019dok','2019gaf',
            '2019gqk','2019hau','2019iex','2019keo','2019lkw','2019oa' ,'2019otb','2019pjs',
-           '2019sjx','2019tqb','2019wbg','2020ekk']
+           '2019sjx','2019tqb','2019wbg','2020ekk', object_name]
     good = [i not in bad for i in training_table_in['mod_object_name']]
     training_table_in = training_table_in[good]
 
@@ -226,7 +229,7 @@ def create_training_testing(features_table, training_days = 20, model = 'single'
 
     return predicted_probability
 
-def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan, acceptance_radius = 3, import_ZTF = True, import_OSC = True, import_local = True, import_lightcurve = True, reimport_catalog = False, search_radius = 1.0, dust_map = 'SFD', Pcc_filter = 'i', Pcc_filter_alternative = 'r', star_separation = 1, star_cut = 0.1, date_range = np.inf, n_walkers = 50, n_steps = 500, n_cores = 1, model = 'single', training_days = 20, hostless_cut = 0.1, sorting_state = 42, clean = 0, SMOTE_state = 42, clf_state = 42, n_estimators = 100, max_depth = 7, feature_set = 13, neighbors = 20, classifier = ''):
+def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan, acceptance_radius = 3, import_ZTF = True, import_OSC = True, import_local = True, import_lightcurve = True, reimport_catalog = False, search_radius = 1.0, dust_map = 'SFD', Pcc_filter = 'i', Pcc_filter_alternative = 'r', star_separation = 1, star_cut = 0.1, date_range = np.inf, n_walkers = 50, n_steps = 500, n_cores = 1, model = 'single', training_days = 20, hostless_cut = 0.1, sorting_state = 42, clean = 0, SMOTE_state = 42, clf_state = 42, n_estimators = 100, max_depth = 7, feature_set = 13, neighbors = 20, classifier = '', plot_lightcurve = False):
     '''
     Main Function to predict the probability of an object to be a Superluminous Supernovae
     using the training set provided and a random forest algorithim. The function will query
@@ -275,6 +278,7 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
     neighbors               : neighbors to use for star/galaxy separator
     classifier              : Pick the classifier to use based on the available information
                               either 'quick', 'redshift', 'host', or 'late'. 
+    plot_lightcurve         : Save an output plot with the light curve and PS1 image?
 
     Returns
     ---------------
@@ -317,25 +321,28 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
     data_catalog = catalog_operations(data_catalog_out, ra_deg, dec_deg, Pcc_filter, Pcc_filter_alternative, neighbors)
 
     ##### Find the Best host #####
-    host_radius, host_separation, host_Pcc, host_magnitude, photoz, photoz_err, specz, specz_err = get_best_host(data_catalog, star_separation, star_cut)
+    host_radius, host_separation, host_Pcc, host_magnitude, host_nature, photoz, photoz_err, specz, specz_err = get_best_host(data_catalog, star_separation, star_cut)
 
     ##### Get Features #####
     features_table = create_features(object_name, red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, model_color, bright_mjd, first_mjd, green_brightest, red_brightest, host_radius, host_separation, host_Pcc, host_magnitude, hostless_cut, redshift)
 
     ##### Run Classifier #####
     if classifier == '':
-        predicted_probability = create_training_testing(features_table, training_days, model, clean, feature_set, sorting_state, SMOTE_state, clf_state, n_estimators, max_depth)
+        predicted_probability = create_training_testing(object_name, features_table, training_days, model, clean, feature_set, sorting_state, SMOTE_state, clf_state, n_estimators, max_depth, hostless_cut)
     elif classifier == 'quick':
-        predicted_probability = create_training_testing(features_table, training_days = 20, model = 'single', clean = 0, feature_set = 13, max_depth = 7)
+        predicted_probability = create_training_testing(object_name, features_table, training_days = 20, model = 'single', clean = 0, feature_set = 13, max_depth = 7)
     elif classifier == 'redshift':
-        predicted_probability = create_training_testing(features_table, training_days = 20, model = 'single', clean = 0, feature_set = 16, max_depth = 7)
+        predicted_probability = create_training_testing(object_name, features_table, training_days = 20, model = 'single', clean = 0, feature_set = 16, max_depth = 7)
     elif classifier == 'late':
-        predicted_probability = create_training_testing(features_table, training_days = 70, model = 'double', clean = 0, feature_set = 7 , max_depth = 9)
+        predicted_probability = create_training_testing(object_name, features_table, training_days = 70, model = 'double', clean = 0, feature_set = 7 , max_depth = 9)
     elif classifier == 'host':
-        predicted_probability = create_training_testing(features_table, training_days = 70, model = 'double', clean = 1, feature_set = 7 , max_depth = 9)
+        predicted_probability = create_training_testing(object_name, features_table, training_days = 70, model = 'double', clean = 1, feature_set = 7 , max_depth = 9)
 
     # Predicted Probability to be ['Nuclear','SLSN-I','SLSN-II','SNII','SNIIb','SNIIn','SNIa','SNIbc','Star']
     P_SLSNI = predicted_probability[0][1]
     # Return Probability that the object is a SLSN-I
-    
+
+    if plot_lightcurve:
+        make_plot(object_name, ra_deg, dec_deg, output_table, first_mjd, bright_mjd, red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude)
+
     return P_SLSNI

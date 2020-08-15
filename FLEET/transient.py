@@ -649,8 +649,12 @@ def generate_lightcurve(ztf_data, osc_data, object_name = '--', ztf_name = '--',
             print('lightcurve data required, import_lightcurve can not be False')
             return
         else:
-            output_types=['float64','float64','float64','S25','S25','S25','S25','S25','S25']
-            output_table = table.Table(table.Table.read(exists[0], format='ascii', guess=False), dtype = output_types)
+            try:
+                output_types=['float64','float64','float64','S25','S25','S25','S25','S25','S25']
+                output_table = table.Table(table.Table.read(exists[0], format='ascii', guess=False), dtype = output_types)
+            except:
+                output_types=['float64','float64','float64','S25','S25','S25','S25','S25','S25','S25','S25','S25']
+                output_table = table.Table(table.Table.read(exists[0], format='ascii', guess=False), dtype = output_types)
 
         return output_table
 

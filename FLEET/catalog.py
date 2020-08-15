@@ -260,10 +260,11 @@ def query_3pi(ra_deg, dec_deg, search_radius = 1.0):
     s.iSerAb,s.iSerNu,s.iSerPhi,s.iSerChisq,s.zSerRadius,s.zSerMag,s.zSerAb,s.zSerNu,s.zSerPhi,s.zSerChisq,s.ySerRadius,s.ySerMag,
     s.ySerAb,s.ySerNu,s.ySerPhi,s.ySerChisq,b.gpsfTheta,b.rpsfTheta,b.ipsfTheta,b.zpsfTheta,b.ypsfTheta,b.gKronRad,b.rKronRad,
     b.iKronRad,b.zKronRad,b.yKronRad,b.gPSFFlux,b.rPSFFlux,b.iPSFFlux,b.zPSFFlux,b.yPSFFlux,b.gpsfMajorFWHM,b.rpsfMajorFWHM,
-    b.ipsfMajorFWHM,b.zpsfMajorFWHM,b.ypsfMajorFWHM,b.gpsfMinorFWHM,b.rpsfMinorFWHM,b.ipsfMinorFWHM,b.zpsfMinorFWHM,b.ypsfMinorFWHM 
+    b.ipsfMajorFWHM,b.zpsfMajorFWHM,b.ypsfMajorFWHM,b.gpsfMinorFWHM,b.rpsfMinorFWHM,b.ipsfMinorFWHM,b.zpsfMinorFWHM,b.ypsfMinorFWHM, psc.ps_score
     FROM fGetNearbyObjEq(%s, %s, %s) nb
     INNER JOIN ObjectThin o on o.objid=nb.objid
     INNER JOIN StackObjectThin m on o.objid=m.objid
+    INNER JOIN HLSP_PS1_PSC.pointsource_scores psc on o.objid=psc.objid
     FULL JOIN StackModelFitSer s on o.objid=s.objid
     INNER JOIN StackObjectAttributes b on o.objid=b.objid WHERE m.primaryDetection = 1
     """ 
@@ -1004,6 +1005,7 @@ def get_best_host(data_catalog, star_separation = 1, star_cut = 0.1):
     host_separation = data_catalog['separation'         ][best_host]
     host_Pcc        = data_catalog['chance_coincidence' ][best_host]
     host_magnitude  = data_catalog['effective_magnitude'][best_host]
+    host_nature     = data_catalog['object_nature'      ][best_host]
 
     if 'z_sdss' in data_catalog.colnames:
         photoz          = data_catalog['z_sdss'][best_host]
@@ -1013,4 +1015,4 @@ def get_best_host(data_catalog, star_separation = 1, star_cut = 0.1):
     else:
         photoz = photoz_err = specz = specz_err = np.nan
 
-    return host_radius, host_separation, host_Pcc, host_magnitude, photoz, photoz_err, specz, specz_err
+    return host_radius, host_separation, host_Pcc, host_magnitude, host_nature, photoz, photoz_err, specz, specz_err
