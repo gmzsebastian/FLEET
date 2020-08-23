@@ -29,13 +29,14 @@ def lnlike_double(theta, x, y, z):
 
     return Likely
 
-def lnlike_single(theta, x, y, z):
-    # Likelihood function fixing W1 to 1
+def lnlike_single(theta, x, y, z, W2 = 0.6):
+    # Likelihood function fixing W1 to 0.6
+    # the average from fitting the full light curves
     amplitude, offset, magnitude = theta
 
     # Fit red lightcurve
     weight = 1.0 / (z ** 2)
-    error  = y - linex(x, amplitude, 1.0, offset, magnitude)
+    error  = y - linex(x, amplitude, W2, offset, magnitude)
     Likely = -0.5*(np.sum(weight * error ** 2 + np.log(2.0 * np.pi / weight)))
 
     return Likely
@@ -211,8 +212,8 @@ def fit_linex(output_table, date_range = np.inf, n_walkers = 50, n_steps = 500, 
             if model == 'single':
                 amplitude_mcmc_r, offset_mcmc_r, magnitude_mcmc_r = map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]), zip(*np.percentile(samples_r_crop, [15.87, 50, 84.13], axis=0)))
                 amplitude_mcmc_g, offset_mcmc_g, magnitude_mcmc_g = map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]), zip(*np.percentile(samples_g_crop, [15.87, 50, 84.13], axis=0)))
-                amplitude2_mcmc_r = (1, 1, 1)
-                amplitude2_mcmc_g = (1, 1, 1)
+                amplitude2_mcmc_r = (0.6, 0.6, 0.6)
+                amplitude2_mcmc_g = (0.6, 0.6, 0.6)
             elif model == 'double':
                 amplitude_mcmc_r, amplitude2_mcmc_r, offset_mcmc_r, magnitude_mcmc_r = map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]), zip(*np.percentile(samples_r_crop, [15.87, 50, 84.13], axis=0)))
                 amplitude_mcmc_g, amplitude2_mcmc_g, offset_mcmc_g, magnitude_mcmc_g = map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]), zip(*np.percentile(samples_g_crop, [15.87, 50, 84.13], axis=0)))
@@ -235,5 +236,3 @@ def fit_linex(output_table, date_range = np.inf, n_walkers = 50, n_steps = 500, 
     else:
         print('Not enough g and r band points \n')
         return np.nan * np.ones(13)
-
-
