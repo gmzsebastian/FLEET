@@ -76,7 +76,7 @@ def lnprob_single(theta, x, y, z):
         return -np.inf
     return lp + lnlike_single(theta, x, y, z)
 
-def fit_linex(output_table, date_range = np.inf, n_walkers = 50, n_steps = 500, n_cores = 1, model = 'double'):
+def fit_linex(output_table, date_range = np.inf, n_walkers = 50, n_steps = 500, n_cores = 1, model = 'double', g_correct = 0, r_correct = 0):
     '''
     Use emcee to fit an exponential function to the green and red light curves
     of a transient.
@@ -90,6 +90,8 @@ def fit_linex(output_table, date_range = np.inf, n_walkers = 50, n_steps = 500, 
     n_cores       : Number of cores for the emcee
     model         : 'double' will fit an exponential rise and linear decline
                     'single' will just fit a single exponential
+    g_correct     : extinction value in g band
+    r_correct     : extinction value in r band
 
     Output
     ---------------
@@ -117,8 +119,8 @@ def fit_linex(output_table, date_range = np.inf, n_walkers = 50, n_steps = 500, 
     # Get Data into a useful format
     g_time   = np.array(output_table['MJD'   ][green])
     r_time   = np.array(output_table['MJD'   ][red  ])
-    g_mag    = np.array(output_table['Mag'   ][green])
-    r_mag    = np.array(output_table['Mag'   ][red  ])
+    g_mag    = np.array(output_table['Mag'   ][green]) - g_correct
+    r_mag    = np.array(output_table['Mag'   ][red  ]) - r_correct
     g_magerr = np.array(output_table['MagErr'][green])
     r_magerr = np.array(output_table['MagErr'][red  ])
 

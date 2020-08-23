@@ -1,5 +1,5 @@
 from FLEET.transient import get_transient_info, generate_lightcurve, ignore_data
-from FLEET.catalog import get_catalog, catalog_operations, get_best_host
+from FLEET.catalog import get_catalog, catalog_operations, get_best_host, get_extinction
 from sklearn.ensemble import RandomForestClassifier
 from astropy.coordinates import Distance
 from imblearn.over_sampling import SMOTE
@@ -250,7 +250,8 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
     reimport_catalog        : Overwrite the existing 3PI/SDSS catalog
     search_radius           : Search radius in arcminutes for the 3PI/SDSS catalog
     dust_map                : 'SF' or 'SFD', to query Schlafy and Finkbeiner 2011
-                              or Schlafy, Finkbeiner and Davis 1998
+                              or Schlafy, Finkbeiner and Davis 1998.
+                              set to 'none' to not correct for extinction
     Pcc_filter              : The effective magnitude, radius, and Pcc
                               are calculated in this filter.
     Pcc_filter_alternative  : If Pcc_filter is not found, use this one
@@ -306,8 +307,11 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
         print('No useable data in lightcurve')
         return
 
+    # Extinction
+    g_correct, r_correct = get_extinction(ra_deg, dec_deg, dust_map)
+
     ##### Fit Lightcurve #####
-    red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, model_color, bright_mjd, first_mjd, green_brightest, red_brightest = fit_linex(output_table, date_range, n_walkers, n_steps, n_cores, model)
+    red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, model_color, bright_mjd, first_mjd, green_brightest, red_brightest = fit_linex(output_table, date_range, n_walkers, n_steps, n_cores, model, g_correct, r_correct)
     if np.isnan(red_amplitude):
         return
 
@@ -343,6 +347,6 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
     # Return Probability that the object is a SLSN-I
 
     if plot_lightcurve:
-        make_plot(object_name, ra_deg, dec_deg, output_table, first_mjd, bright_mjd, red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude)
+        make_plot(object_name, ra_deg, dec_deg, output_table, first_mjd, bright_mjd, red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, g_correct, r_correct)
 
     return P_SLSNI

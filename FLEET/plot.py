@@ -325,7 +325,7 @@ def plot_field_image(ax, ra_deg, dec_deg, object_name, image_color = 'r', search
 
     ax.scatter(wcs_size*2, wcs_size*2, marker = '+', color = 'r')
 
-def make_plot(object_name, ra_deg, dec_deg, output_table, first_mjd, bright_mjd, red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude):
+def make_plot(object_name, ra_deg, dec_deg, output_table, first_mjd, bright_mjd, red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, g_correct = 0, r_correct = 0):
     '''
     Create a diagnosis plot with the light curve and field image of a transient
 
@@ -337,18 +337,23 @@ def make_plot(object_name, ra_deg, dec_deg, output_table, first_mjd, bright_mjd,
     first_mjd        : First MJD in either g or r from fit_linex()
     bright_mjd       : Brightest MJD in either g or r from fit_linex()
     red_amplitude    : Parameters from fit_linex()
-    red_amplitude2   : ''
-    red_offset       : ''
-    red_magnitude    : ''
-    green_amplitude  : ''
-    green_amplitude2 : ''
-    green_offset     : ''
-    green_magnitude  : ''
+    red_amplitude2   : 
+    red_offset       : 
+    red_magnitude    : 
+    green_amplitude  : 
+    green_amplitude2 : 
+    green_offset     : 
+    green_magnitude  : 
+    g_correct        : extinction value in g band
+    r_correct        : extinction value in r band
 
     Output
     ---------------
     Saves an output to plots/ directory
     '''
+
+    # Correct for extinction
+    output_table_correct = extinct(output_table, g_correct, r_correct)
 
     # Create folder to store images, if it doesn't exist
     if len(glob.glob('plots')) == 0:
@@ -359,10 +364,10 @@ def make_plot(object_name, ra_deg, dec_deg, output_table, first_mjd, bright_mjd,
     gs  = gridspec.GridSpec(2, 2, height_ratios=[1, 2], width_ratios=[2, 1], hspace = 0, wspace = 0) 
 
     ax0 = plt.subplot(gs[0])
-    plot_lightcurve(ax0, output_table, first_mjd, bright_mjd, full_range = True)
+    plot_lightcurve(ax0, output_table_correct, first_mjd, bright_mjd, full_range = True)
 
     ax2 = plt.subplot(gs[2])
-    used_colors, used_sources = plot_lightcurve(ax2, output_table, first_mjd, bright_mjd, red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, full_range = False)
+    used_colors, used_sources = plot_lightcurve(ax2, output_table_correct, first_mjd, bright_mjd, red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, full_range = False)
 
     ax3 = plt.subplot(gs[3])
     plot_legend(ax3, used_colors, used_sources)
@@ -372,6 +377,33 @@ def make_plot(object_name, ra_deg, dec_deg, output_table, first_mjd, bright_mjd,
 
     plt.savefig('plots/%s.pdf'%object_name, bbox_inches = 'tight')
     plt.clf(); plt.close('all')
+
+def extinct(output_table, g_correct = 0, r_correct = 0):
+    '''
+    Correct table for extinction, only g and r bands 
+    for plotting purposes
+
+    Parameters
+    ---------------
+    output_table     : Data with photometry
+    g_correct        : extinction value in g band
+    r_correct        : extinction value in r band
+
+    Output
+    ---------------
+    output_table_correct
+    '''
+
+    output_table_correct = table.Table(output_table)
+
+    # Separate into green and red filters
+    green = np.where(((output_table['Filter'] == 'g') | (output_table['Filter'] == "g'")))
+    red   = np.where(((output_table['Filter'] == 'r') | (output_table['Filter'] == 'R') | (output_table['Filter'] == "r'")))
+
+    output_table_correct['Mag'][green] = output_table['Mag'][green] - g_correct
+    output_table_correct['Mag'][red]   = output_table['Mag'][red]   - r_correct
+
+    return output_table_correct
 
 
 

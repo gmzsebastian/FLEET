@@ -7,6 +7,7 @@ from astropy import table
 import pkg_resources
 import numpy as np
 import mastcasjobs
+import extinction
 import requests
 import warnings
 import pathlib
@@ -44,7 +45,7 @@ def angular_separation(lon1, lat1, lon2, lat2):
 
     return np.arctan2(np.hypot(num1, num2), denominator) * 3600 * 180 / np.pi
 
-def query_dust(RA_deg, DEC_deg, dust_map = 'SFD'):
+def query_dust(ra_deg, dec_deg, dust_map = 'SFD'):
     '''
     Query dust maps to get reddening value. In order to use 
     the 'SF' map you need to download the dust maps, which 
@@ -63,14 +64,19 @@ def query_dust(RA_deg, DEC_deg, dust_map = 'SFD'):
     RA_deg, DEC_deg : Coordinates of the object in degrees.
     dust_map: 'SF' or 'SFD', to query Schlafy and Finkbeiner 2011
                or Schlafy, Finkbeiner and Davis 1998
+              set to 'none' to not correct for extinction
 
     Returns
     ---------------
     One merged Astropy Table catalog
     '''
+
+    if dust_map == 'none':
+        return 0
+
     if dust_map == 'SF':
         # Generate URL to query
-        dust_url = 'https://irsa.ipac.caltech.edu/cgi-bin/DUST/nph-dust?locstr=%s+%s+equ+j2000'%(RA_deg, DEC_deg)
+        dust_url = 'https://irsa.ipac.caltech.edu/cgi-bin/DUST/nph-dust?locstr=%s+%s+equ+j2000'%(ra_deg, dec_deg)
         response = requests.get(dust_url)
         # Create xml response Tree
         tree = ElementTree.fromstring(response.content)
@@ -79,7 +85,7 @@ def query_dust(RA_deg, DEC_deg, dust_map = 'SFD'):
             reddeningSandF = child.text.replace('\n','').replace(' ','').replace('(mag)','')
         return float(reddeningSandF)
     elif dust_map == 'SFD':
-        coord = SkyCoord(RA_deg, DEC_deg, unit="deg")
+        coord = SkyCoord(ra_deg, dec_deg, unit="deg")
         sfd = SFDQuery()
         ebv = sfd(coord)
         return ebv
@@ -404,6 +410,7 @@ def query_everything(ra_deg, dec_deg, search_radius = 1.0, dust_map = 'SFD'):
     search_radius   : Search radius in arcminutes
     dust_map        : 'SF' or 'SFD', to query Schlafy and Finkbeiner 2011
                       or Schlafy, Finkbeiner and Davis 1998
+                      set to 'none' to not correct for extinction
 
     Returns
     ---------------
@@ -499,6 +506,7 @@ def get_catalog(object_name, ra_deg, dec_deg, search_radius = 1.0, dust_map = 'S
     search_radius    : Search radius in arcminutes
     dust_map         : 'SF' or 'SFD', to query Schlafy and Finkbeiner 2011
                        or Schlafy, Finkbeiner and Davis 1998.
+                       set to 'none' to not correct for extinction
     reimport_catalog : If True it will reimport catalog even if
                        it already exists
 
@@ -956,6 +964,40 @@ def catalog_operations(data_catalog_out, ra_deg, dec_deg, Pcc_filter = 'i', Pcc_
     Astropy table with all the objects around the transient and additional information
     '''
 
+    # Correct for Extinction
+    E_BV = flot(data_catalog_out['extinction'])
+    R_V = 3.1
+    u_correct = np.array([extinction.ccm89(np.array([3594.90]), i * R_V, R_V)[0] for i in E_BV])
+    g_correct = np.array([extinction.ccm89(np.array([4640.40]), i * R_V, R_V)[0] for i in E_BV])
+    r_correct = np.array([extinction.ccm89(np.array([6122.30]), i * R_V, R_V)[0] for i in E_BV])
+    i_correct = np.array([extinction.ccm89(np.array([7439.50]), i * R_V, R_V)[0] for i in E_BV])
+    z_correct = np.array([extinction.ccm89(np.array([8897.10]), i * R_V, R_V)[0] for i in E_BV])
+    y_correct = np.array([extinction.ccm89(np.array([9603.10]), i * R_V, R_V)[0] for i in E_BV])
+
+    if 'gKronMag_3pi' in data_catalog_out.colnames:
+        data_catalog_out['gKronMag_3pi'] = flot(data_catalog_out['gKronMag_3pi']) - g_correct
+        data_catalog_out['rKronMag_3pi'] = flot(data_catalog_out['rKronMag_3pi']) - r_correct
+        data_catalog_out['iKronMag_3pi'] = flot(data_catalog_out['iKronMag_3pi']) - i_correct
+        data_catalog_out['zKronMag_3pi'] = flot(data_catalog_out['zKronMag_3pi']) - z_correct
+        data_catalog_out['yKronMag_3pi'] = flot(data_catalog_out['yKronMag_3pi']) - y_correct
+        data_catalog_out['gPSFMag_3pi' ] = flot(data_catalog_out['gPSFMag_3pi' ]) - g_correct
+        data_catalog_out['rPSFMag_3pi' ] = flot(data_catalog_out['rPSFMag_3pi' ]) - r_correct
+        data_catalog_out['iPSFMag_3pi' ] = flot(data_catalog_out['iPSFMag_3pi' ]) - i_correct
+        data_catalog_out['zPSFMag_3pi' ] = flot(data_catalog_out['zPSFMag_3pi' ]) - z_correct
+        data_catalog_out['yPSFMag_3pi' ] = flot(data_catalog_out['yPSFMag_3pi' ]) - y_correct
+
+    if 'psfMag_u_sdss' in data_catalog_out.colnames:
+        data_catalog_out['psfMag_u_sdss'  ] = flot(data_catalog_out['psfMag_u_sdss'  ]) - g_correct
+        data_catalog_out['psfMag_g_sdss'  ] = flot(data_catalog_out['psfMag_g_sdss'  ]) - r_correct
+        data_catalog_out['psfMag_r_sdss'  ] = flot(data_catalog_out['psfMag_r_sdss'  ]) - i_correct
+        data_catalog_out['psfMag_i_sdss'  ] = flot(data_catalog_out['psfMag_i_sdss'  ]) - z_correct
+        data_catalog_out['psfMag_z_sdss'  ] = flot(data_catalog_out['psfMag_z_sdss'  ]) - y_correct
+        data_catalog_out['modelMag_u_sdss'] = flot(data_catalog_out['modelMag_u_sdss']) - g_correct
+        data_catalog_out['modelMag_g_sdss'] = flot(data_catalog_out['modelMag_g_sdss']) - r_correct
+        data_catalog_out['modelMag_r_sdss'] = flot(data_catalog_out['modelMag_r_sdss']) - i_correct
+        data_catalog_out['modelMag_i_sdss'] = flot(data_catalog_out['modelMag_i_sdss']) - z_correct
+        data_catalog_out['modelMag_z_sdss'] = flot(data_catalog_out['modelMag_z_sdss']) - y_correct
+
     # Append nature to catalog [0 = star, 1 = galaxy]
     data_catalog = append_nature(classification_catalog, data_catalog_out, clear_stars, clear_galaxy, neighbors)
 
@@ -1016,3 +1058,26 @@ def get_best_host(data_catalog, star_separation = 1, star_cut = 0.1):
         photoz = photoz_err = specz = specz_err = np.nan
 
     return host_radius, host_separation, host_Pcc, host_magnitude, host_nature, photoz, photoz_err, specz, specz_err
+
+# Extinction
+def get_extinction(ra_deg, dec_deg, dust_map = 'SFD'):
+    '''
+    Get the extinction only in g and r band for the light 
+    curve fitting
+
+    Parameters
+    ---------------
+    ra_deg, dec_deg : Coordinates of the object in degrees.
+    dust_map: 'SF' or 'SFD', to query Schlafy and Finkbeiner 2011
+               or Schlafy, Finkbeiner and Davis 1998
+
+    Returns
+    ---------------
+    Floats of g and r extinction correction
+    '''
+    ebv = query_dust(ra_deg, dec_deg, dust_map = dust_map)
+    R_V = 3.1
+    g_correct = extinction.ccm89(np.array([4640.40]), ebv * R_V, R_V)[0]
+    r_correct = extinction.ccm89(np.array([6122.30]), ebv * R_V, R_V)[0]
+
+    return g_correct, r_correct
