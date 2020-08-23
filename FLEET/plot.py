@@ -196,7 +196,7 @@ def plot_lightcurve(ax, output_table, first_mjd, bright_mjd, red_amplitude = np.
         ax.plot(model_time, model_red    , color = 'r', linestyle = ':', linewidth = 0.5)
         ax.plot(model_time, model_green  , color = 'g', linestyle = ':', linewidth = 0.5)
 
-    used_colors, used_sources = np.unique(all_colors), np.unique(all_sources)
+    used_colors, used_sources = np.unique(all_filters), np.unique(all_sources)
     return used_colors, used_sources
 
 def plot_legend(ax, used_colors, used_sources):
