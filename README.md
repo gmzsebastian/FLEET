@@ -67,7 +67,6 @@ for object_name in object_names:
 ```
 
 If you set `plot_lightcurve = True` this will generate a plot an image of the field, light curve, and corresponding best fit model.
-<p align="center"><img src="2020kn.pdf" align="center" alt="2020kn" width="900"/></p>
 <p align="center"><img src="2020kn.png" align="center" alt="2020kn" width="900"/></p>
 
 # Modification
