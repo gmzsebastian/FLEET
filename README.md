@@ -65,9 +65,7 @@ querry_multiple_osc(','.object_names)
 for object_name in object_names:
 	predict_SLSN(object_name)
 ```
-
 If you set `plot_lightcurve = True` this will generate a plot an image of the field, light curve, and corresponding best fit model.
-<p align="center"><img src="2020kn.png" align="center" alt="2020kn" width="900"/></p>
 
 # Modification
 We encourage you to modify the `predict_SLSN` function depending on your goals. For example, if you only need part of it, or if you want to run multiple classifiers on a single object.
@@ -81,4 +79,52 @@ for seed in range(10, 20):
 average_p = np.mean(p_out)
 std_p = np.std(p_out)
 ```
-  
+(this wil be a feature in the future)
+
+### get_transient_info
+This function will get all the relevant information for a transient, such as RA, DEC, TNS name, ZTF name, and light curve from the TNS, ZTF, or OSC. If the transient is lower than DEC = -32, FLEET will quit immediately, since this is lower than any 3PI coverage.
+
+### generate_lightcurve
+This function will grab everything from `get_transient_info` and generate a single lightcurve file that can be read in without having to re-query all the data every time. `ignore_data` can be run on the output table from `generate_lightcurve` to mark any spurious data points from the light curve as "Ignore". To do this just make a directory called `ignore/` and place files of the format `object_name.txt` where each line is a region bounded by `minMJD maxMJD minMag maxMag` that will be ignored. 
+
+### fit_linex
+This function will fit a simple model to the light curve and return all the relevant parameters and light curve information for plotting. Optionally you can run `get_extinction` to apply an extinction correction to the `g` and `r` band points of the light curve. (Applying extinction to other bands will be a feature in the future)
+
+### get_catalog
+This function will get the objects from 3PI and SDSS, cross-match them, and generate a single catalog file that can then be read in instead of having to query again. The output can be fed into `catalog_operations` which will calculate the probability of each object to be a galaxy, and correct their `ugrizy` magnitudes for extinction.
+
+### get_best_host
+This function will find the most likely host from the catalog file. The best host is the one with the lowest probability of chance coincidence. Objects will be ignored if they have probability of being a galaxy < 10%.
+
+### create_features
+This function will generate the set of features that the machine learning classifier will need to predict the class of the transient.
+
+### create_training_testing
+This is where the classifier lives. The parameters for the basic `quick`, `redshift`, `late`, and `host` classifiers described in Gomez et al. 2020 are provided in `predict_SLSN`
+```
+if classifier == 'quick':
+    predicted_probability = create_training_testing(object_name, features_table, training_days = 20, model = 'single', clean = 0, feature_set = 13, max_depth = 7)
+elif classifier == 'redshift':
+    predicted_probability = create_training_testing(object_name, features_table, training_days = 20, model = 'single', clean = 0, feature_set = 16, max_depth = 7)
+elif classifier == 'late':
+    predicted_probability = create_training_testing(object_name, features_table, training_days = 70, model = 'double', clean = 0, feature_set = 7 , max_depth = 9)
+elif classifier == 'host':
+    predicted_probability = create_training_testing(object_name, features_table, training_days = 70, model = 'double', clean = 1, feature_set = 7 , max_depth = 9)
+```
+You can modify these parameters, run multiple at the same time, or run with different seed numbers.
+The order of the classes for `predicted_probability` is 
+0 = 'Nuclear'
+1 = 'SLSN-I'
+2 = 'SLSN-II'
+3 = 'SNII'
+4 = 'SNIIb'
+5 = 'SNIIn'
+6 = 'SNIa'
+7 = 'SNIbc'
+8 = 'Star'
+
+### make_plot
+
+This function generates a light curve plot, one zoomed in and one zoomed out. As well as download a small cutout image of the field. It saves the output to the `plots/` folder. For example:
+<p align="center"><img src="2020kn.png" align="center" alt="2020kn" width="900"/></p>
+
