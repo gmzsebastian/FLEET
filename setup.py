@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='FLEET',
-      version='0.1',
+      version='1.0.0',
       description='Finding Luminous and Exotic Extragalactic Transients',
       url='https://github.com/gmzsebastian/FLEET',
       author=['Sebastian Gomez'],
@@ -35,5 +35,3 @@ setup(name='FLEET',
       ],
       test_suite='nose.collector',
       zip_safe = False)
-
-
