@@ -1,6 +1,6 @@
 from setuptools import setup
 
-setup(name='FLEET',
+setup(name='fleet-pipe',
       version='1.0.0',
       description='Finding Luminous and Exotic Extragalactic Transients',
       url='https://github.com/gmzsebastian/FLEET',
