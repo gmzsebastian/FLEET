@@ -157,7 +157,7 @@ def get_tns_name(ra_deg, dec_deg, acceptance_radius = 3):
     api_key      = str(np.genfromtxt(key_location, dtype = 'str'))
 
     # Build JSON query
-    url = "https://wis-tns.weizmann.ac.il/api/get"
+    url = "https://www.wis-tns.org/api/get"
     json_list=[("ra",str(ra_deg)), ("dec",str(dec_deg)), ("radius",str(acceptance_radius)), ("units","arcsec"), ("objname",""), ("internal_name","")]
     search_url=url+'/search'
     try:
@@ -368,7 +368,7 @@ def get_tns_coords(tns_name):
     api_key      = str(np.genfromtxt(key_location, dtype = 'str'))
 
     # Build JSON query
-    url       = "https://wis-tns.weizmann.ac.il/api/get"
+    url       = "https://www.wis-tns.org/api/get"
     json_list = [("objname",tns_name), ("photometry","0")]
     get_url   = os.path.join(url, 'object')                 
 

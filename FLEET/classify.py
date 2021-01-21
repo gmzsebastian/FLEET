@@ -8,6 +8,8 @@ from FLEET.plot import make_plot
 from astropy import table
 import pkg_resources
 import numpy as np
+import glob
+import os
 
 def redshift_magnitude(magnitude, redshift, sigma = 0):
     """
@@ -103,7 +105,7 @@ def create_features(object_name, red_amplitude, red_amplitude2, red_offset, red_
 
     # Redshift and Absolute Magnitude
     if np.isfinite(red_brightest):
-        absmag, _ = redshift_magnitude(red_brightest, redshift)
+        absmag, _ = redshift_magnitude(red_brightest, np.max([redshift, 0]))
         if np.isinf(absmag): absmag = 0
     else:
         absmag = np.nan
@@ -229,7 +231,7 @@ def create_training_testing(object_name, features_table, training_days = 20, mod
 
     return predicted_probability
 
-def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan, acceptance_radius = 3, import_ZTF = True, import_OSC = True, import_local = True, import_lightcurve = True, reimport_catalog = False, search_radius = 1.0, dust_map = 'SFD', Pcc_filter = 'i', Pcc_filter_alternative = 'r', star_separation = 1, star_cut = 0.1, date_range = np.inf, n_walkers = 50, n_steps = 500, n_cores = 1, model = 'single', training_days = 20, hostless_cut = 0.1, sorting_state = 42, clean = 0, SMOTE_state = 42, clf_state = 42, n_estimators = 100, max_depth = 7, feature_set = 13, neighbors = 20, classifier = '', plot_lightcurve = False):
+def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan, acceptance_radius = 3, import_ZTF = True, import_OSC = True, import_local = True, import_lightcurve = True, reimport_catalog = False, search_radius = 1.0, dust_map = 'SFD', Pcc_filter = 'i', Pcc_filter_alternative = 'r', star_separation = 1, star_cut = 0.1, date_range = np.inf, n_walkers = 50, n_steps = 500, n_cores = 1, model = 'single', training_days = 20, hostless_cut = 0.1, sorting_state = 42, clean = 0, SMOTE_state = 42, clf_state = 42, n_estimators = 100, max_depth = 7, feature_set = 13, neighbors = 20, classifier = '', plot_lightcurve = False, save_features = False, overwrite_features = False):
     '''
     Main Function to predict the probability of an object to be a Superluminous Supernovae
     using the training set provided and a random forest algorithim. The function will query
@@ -280,6 +282,8 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
     classifier              : Pick the classifier to use based on the available information
                               either 'quick', 'redshift', 'host', or 'late'. 
     plot_lightcurve         : Save an output plot with the light curve and PS1 image?
+    save_features           : Save the features table to a file
+    overwrite_features      : Overwrite features?
 
     Returns
     ---------------
@@ -287,6 +291,15 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
 
     '''
     print('\n################# FLEET #################')
+
+    # If the features file already exists, don't overwrite it
+    if save_features:
+        if not overwrite_features :
+            filename = '%s_%s/center_table_%s_%s_%s.txt'%(int(float(date_range)), model, int(float(date_range)), model, object_name_in)
+            if len(glob.glob(filename)) > 0:
+                print('exists')
+                return
+
     ##### Basic transient info #####
     ra_deg, dec_deg, transient_source, object_name, ztf_data, ztf_name, tns_name, osc_data = get_transient_info(object_name_in, ra_in, dec_in, acceptance_radius, import_ZTF, import_OSC, import_lightcurve)
     if ra_deg == '--': return
@@ -329,6 +342,15 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
 
     ##### Get Features #####
     features_table = create_features(object_name, red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, model_color, bright_mjd, first_mjd, green_brightest, red_brightest, host_radius, host_separation, host_Pcc, host_magnitude, hostless_cut, redshift)
+
+    ##### Save Features for training #####
+    if save_features:
+        # Save output
+        foldername = '%s_%s'%(int(float(date_range)), model)
+        if len(glob.glob(foldername)) == 0:
+            os.system('mkdir %s'%foldername)
+        features_table.write(filename, format = 'ascii', overwrite = True)
+        return
 
     ##### Run Classifier #####
     if classifier == '':

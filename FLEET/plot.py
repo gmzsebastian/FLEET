@@ -325,7 +325,7 @@ def plot_field_image(ax, ra_deg, dec_deg, object_name, image_color = 'r', search
 
     ax.scatter(wcs_size*2, wcs_size*2, marker = '+', color = 'r')
 
-def make_plot(object_name, ra_deg, dec_deg, output_table, first_mjd, bright_mjd, red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, g_correct = 0, r_correct = 0):
+def make_plot(object_name, ra_deg, dec_deg, output_table, first_mjd, bright_mjd, red_amplitude = np.nan, red_amplitude2 = np.nan, red_offset = np.nan, red_magnitude = np.nan, green_amplitude = np.nan, green_amplitude2 = np.nan, green_offset = np.nan, green_magnitude = np.nan, g_correct = 0, r_correct = 0):
     '''
     Create a diagnosis plot with the light curve and field image of a transient
 
