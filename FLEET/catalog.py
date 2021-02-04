@@ -1,8 +1,10 @@
 from scipy.special import gamma, gammainc
 from astropy.coordinates import SkyCoord
+from astroquery.vizier import Vizier
 from xml.etree import ElementTree
 from dustmaps.sfd import SFDQuery
 from astroquery.sdss import SDSS
+from astropy import units as u
 from astropy import table
 import pkg_resources
 import numpy as np
@@ -61,7 +63,7 @@ def query_dust(ra_deg, dec_deg, dust_map = 'SFD'):
 
     Parameters
     ---------------
-    RA_deg, DEC_deg : Coordinates of the object in degrees.
+    ra_deg, dec_deg : Coordinates of the object in degrees.
     dust_map: 'SF' or 'SFD', to query Schlafy and Finkbeiner 2011
                or Schlafy, Finkbeiner and Davis 1998
               set to 'none' to not correct for extinction
@@ -399,7 +401,451 @@ def query_SDSS(ra_deg, dec_deg, search_radius = 1.0, timeout=60.0):
     print('Found %s objects \n'%len(catalog_SDSS))
     return catalog_SDSS
 
-def query_everything(ra_deg, dec_deg, search_radius = 1.0, dust_map = 'SFD'):
+def query_2MASS(ra_deg, dec_deg, search_radius):
+    '''
+    Query the 2MASS catalog near the transient's coordinates
+    
+    Parameters
+    ---------------
+    ra_deg, dec_deg : Coordinates of the object in degrees.
+    search_radius   : Search radius in arcminutes
+
+    Returns
+    ---------------
+    RA, DEC, redshift, Magnitudes, object type
+    ex is extended source, 0 = point source
+    '''
+
+    # Query the 2MASS database
+    coord = SkyCoord(ra_deg, dec_deg, unit="deg")
+    print('Querying 2MASS ...')
+    new_vizier   = Vizier(catalog = 'II/246/out', columns=['_2MASS', 'RAJ2000', 'DEJ2000', 'errMaj', 'errMin', 'Jmag', 'e_Jmag', 'Hmag', 'e_Hmag', 'Kmag', 'e_Kmag'], row_limit = 1000)
+    result_table = new_vizier.query_region(coord, radius = search_radius * u.arcmin, catalog = 'II/246/out')
+
+    # If there was data, select columns
+    if result_table:
+        catalog_2MASS = result_table['II/246/out']
+        # Clean up catalog
+        catalog_2MASS = make_nan(catalog_2MASS)
+
+        # Append column name
+        for i in range(len(catalog_2MASS.colnames)):
+            catalog_2MASS[catalog_2MASS.colnames[i]].name = catalog_2MASS.colnames[i] + '_2mass'
+
+        # Only real values
+        catalog_2MASS = catalog_2MASS[np.isfinite(catalog_2MASS['RAJ2000_2mass'])]
+    else:
+        catalog_2MASS = table.Table()
+
+    print('Found %s objects \n'%len(catalog_2MASS))
+    return catalog_2MASS
+
+def query_CFHTLS(ra_deg, dec_deg, search_radius):
+    '''
+    Query the CFHTLS catalog near the transient's coordinates
+    
+    Parameters
+    ---------------
+    ra_deg, dec_deg : Coordinates of the object in degrees.
+    search_radius   : Search radius in arcminutes
+
+    Returns
+    ---------------
+    RA, DEC, redshift, Magnitudes, object type
+    ex is extended source, 0 = point source
+    '''
+
+    # Query the CFHTLS database
+    coord = SkyCoord(ra_deg, dec_deg, unit="deg")
+    print('Querying CFHTLS ...')
+    new_vizier1   = Vizier(catalog = 'II/317/cfhtls_d', columns=['CFHTLS','RAJ2000','DEJ2000','umag','gmag','rmag','imag','zmag','ymag'], row_limit = 100000)
+    new_vizier2   = Vizier(catalog = 'II/317/cfhtls_d', columns=['CFHTLS','RAJ2000','DEJ2000','ucl','gcl','rcl','icl','zcl','ycl','umagA','gmagA','rmagA','imagA','zmagA','ymagA'], row_limit = 100000)
+    result_table1 = new_vizier1.query_region(coord, radius = search_radius * u.arcmin, catalog = 'II/317/cfhtls_d')
+    result_table2 = new_vizier2.query_region(coord, radius = search_radius * u.arcmin, catalog = 'II/317/cfhtls_d')
+
+    # If there was data, select columns
+    if result_table1:
+        catalog_CFHTLS1 = result_table1['II/317/cfhtls_d']
+        catalog_CFHTLS2 = result_table2['II/317/cfhtls_d']
+
+        # Join tables back
+        catalog_CFHTLS = table.join(catalog_CFHTLS1, catalog_CFHTLS2)
+
+        # Clean up catalog
+        catalog_CFHTLS = make_nan(catalog_CFHTLS)
+
+        # Append column name
+        for i in range(len(catalog_CFHTLS.colnames)):
+            catalog_CFHTLS[catalog_CFHTLS.colnames[i]].name = catalog_CFHTLS.colnames[i] + '_CFHTLS'
+
+        # Only real values
+        catalog_CFHTLS = catalog_CFHTLS[np.isfinite(catalog_CFHTLS['RAJ2000_CFHTLS'])]
+    else:
+        catalog_CFHTLS = table.Table()
+
+    print('Found %s objects \n'%len(catalog_CFHTLS))
+    return catalog_CFHTLS
+
+def query_gaia(ra_deg, dec_deg, search_radius):
+    '''
+    Query the Gaia database near the transient's coordinates
+
+    Parameters
+    ---------------
+    ra_deg, dec_deg : Coordinates of the object in degrees.
+    search_radius   : Search radius in arcminutes
+
+    Returns
+    ---------------
+    gaia_nature    : Is the object a 'star', an 'object', or neither '--'
+    gaia_magnitude : Magnitude in Gaia's G, BP, and RP filters
+    gaia_distance  : Distance to the Gaia object
+    parallax       : Parallax of the object in mas
+    parallax_error : Error of the parallax
+    proper motions : In RA and DEC with errors
+    '''
+
+    # Query the Gaia database
+    coord = SkyCoord(ra_deg, dec_deg, unit="deg")
+    print('Querying Gaia ...')
+    new_vizier   = Vizier(catalog = 'I/345/gaia2', row_limit = 1005)
+    result_table = new_vizier.query_region(coord, radius = search_radius * u.arcmin, catalog = ['I/345/gaia2'])
+
+    # If there was data, select columns
+    if result_table:
+        catalog_Gaia = result_table['I/345/gaia2']['RA_ICRS','DE_ICRS','e_RA_ICRS','e_DE_ICRS','Plx','e_Plx','Gmag','e_Gmag','BPmag','e_BPmag','RPmag','e_RPmag','pmRA','e_pmRA','pmDE','e_pmDE']
+        # Clean up catalog
+        catalog_Gaia = make_nan(catalog_Gaia)
+
+        # Append column name
+        for i in range(len(catalog_Gaia.colnames)):
+            catalog_Gaia[catalog_Gaia.colnames[i]].name = catalog_Gaia.colnames[i] + '_gaia'
+
+        # Only real values
+        catalog_Gaia = catalog_Gaia[np.isfinite(catalog_Gaia['RA_ICRS_gaia'])]
+    else:
+        catalog_Gaia = table.Table()
+
+    print('Found %s objects \n'%len(catalog_Gaia))
+    return catalog_Gaia
+
+def query_WISE(ra_deg, dec_deg, search_radius):
+    '''
+    Query the WISE database near the transient's coordinates
+    
+    Parameters
+    ---------------
+    ra_deg, dec_deg : Coordinates of the object in degrees.
+    search_radius   : Search radius in arcminutes
+
+    Returns
+    ---------------
+    RA, DEC, redshift, Magnitudes, object type
+    ex is extended source, 0 = point source
+    '''
+
+    # Query the WISE database
+    coord = SkyCoord(ra_deg, dec_deg, unit="deg")
+    print('Querying WISE ...')
+    new_vizier   = Vizier(catalog = 'II/328/allwise', columns=['AllWISE', 'RAJ2000', 'DEJ2000', 'eeMaj', 'eeMin', 'W1mag', 'e_W1mag', 'W2mag', 'e_W2mag', 'W3mag', 'e_W3mag', 'W4mag', 'e_W4mag'], row_limit = 1000)
+    result_table = new_vizier.query_region(coord, radius = search_radius * u.arcmin, catalog = 'II/328/allwise')
+
+    # If there was data, select columns
+    if result_table:
+        catalog_WISE = result_table['II/328/allwise']
+        # Clean up catalog
+        catalog_WISE = make_nan(catalog_WISE)
+
+        # Append column name
+        for i in range(len(catalog_WISE.colnames)):
+            catalog_WISE[catalog_WISE.colnames[i]].name = catalog_WISE.colnames[i] + '_wise'
+
+        # Only real values
+        catalog_WISE = catalog_WISE[np.isfinite(catalog_WISE['RAJ2000_wise'])]
+    else:
+        catalog_WISE = table.Table()
+
+    print('Found %s objects \n'%len(catalog_WISE))
+    return catalog_WISE
+
+def merge_ten_catalogs(catalog_1, catalog_2, catalog_3, catalog_4, catalog_5, catalog_6, catalog_7, catalog_8, catalog_9, catalog_10, ra_1, ra_2, ra_3, ra_4, ra_5, ra_6, ra_7, ra_8, ra_9, ra_10, dec_1, dec_2, dec_3, dec_4, dec_5, dec_6, dec_7, dec_8, dec_9, dec_10, max_separation = 1.5):
+    '''
+    Merge ten catalogs based on RA and DEC with a maximum separation
+
+    Parameters
+    ---------------
+    catalog_X : Each catalog
+    ra_X, dec_X : Coordinates corresponding to each catalog
+    max_separation : Minimum match in between catalogs
+
+    Returns
+    ---------------
+    One merged Astropy Table catalog
+    '''
+
+    # Do catalogs exist
+    cat_1is  = True if len(catalog_1 ) > 0 else False
+    cat_2is  = True if len(catalog_2 ) > 0 else False
+    cat_3is  = True if len(catalog_3 ) > 0 else False
+    cat_4is  = True if len(catalog_4 ) > 0 else False
+    cat_5is  = True if len(catalog_5 ) > 0 else False
+    cat_6is  = True if len(catalog_6 ) > 0 else False
+    cat_7is  = True if len(catalog_7 ) > 0 else False
+    cat_8is  = True if len(catalog_8 ) > 0 else False
+    cat_9is  = True if len(catalog_9 ) > 0 else False
+    cat_10is = True if len(catalog_10) > 0 else False
+
+    if np.array([cat_1is, cat_2is, cat_3is, cat_4is, cat_5is, cat_6is, cat_7is, cat_8is, cat_9is, cat_10is]).any():
+        # Copy Catalogs
+        cat_1  = table.Table(catalog_1 ) if cat_1is  else table.Table()
+        cat_2  = table.Table(catalog_2 ) if cat_2is  else table.Table()
+        cat_3  = table.Table(catalog_3 ) if cat_3is  else table.Table()
+        cat_4  = table.Table(catalog_4 ) if cat_4is  else table.Table()
+        cat_5  = table.Table(catalog_5 ) if cat_5is  else table.Table()
+        cat_6  = table.Table(catalog_6 ) if cat_6is  else table.Table()
+        cat_7  = table.Table(catalog_7 ) if cat_7is  else table.Table()
+        cat_8  = table.Table(catalog_8 ) if cat_8is  else table.Table()
+        cat_9  = table.Table(catalog_9 ) if cat_9is  else table.Table()
+        cat_10 = table.Table(catalog_10) if cat_10is else table.Table()
+
+        # Get RAs and DECs
+        ra1  = flot(cat_1 [ra_1 ]) if cat_1is  else np.array([])
+        ra2  = flot(cat_2 [ra_2 ]) if cat_2is  else np.array([])
+        ra3  = flot(cat_3 [ra_3 ]) if cat_3is  else np.array([])
+        ra4  = flot(cat_4 [ra_4 ]) if cat_4is  else np.array([])
+        ra5  = flot(cat_5 [ra_5 ]) if cat_5is  else np.array([])
+        ra6  = flot(cat_6 [ra_6 ]) if cat_6is  else np.array([])
+        ra7  = flot(cat_7 [ra_7 ]) if cat_7is  else np.array([])
+        ra8  = flot(cat_8 [ra_8 ]) if cat_8is  else np.array([])
+        ra9  = flot(cat_9 [ra_9 ]) if cat_9is  else np.array([])
+        ra10 = flot(cat_10[ra_10]) if cat_10is else np.array([])
+
+        dec1  = flot(cat_1 [dec_1 ]) if cat_1is  else np.array([])
+        dec2  = flot(cat_2 [dec_2 ]) if cat_2is  else np.array([])
+        dec3  = flot(cat_3 [dec_3 ]) if cat_3is  else np.array([])
+        dec4  = flot(cat_4 [dec_4 ]) if cat_4is  else np.array([])
+        dec5  = flot(cat_5 [dec_5 ]) if cat_5is  else np.array([])
+        dec6  = flot(cat_6 [dec_6 ]) if cat_6is  else np.array([])
+        dec7  = flot(cat_7 [dec_7 ]) if cat_7is  else np.array([])
+        dec8  = flot(cat_8 [dec_8 ]) if cat_8is  else np.array([])
+        dec9  = flot(cat_9 [dec_9 ]) if cat_9is  else np.array([])
+        dec10 = flot(cat_10[dec_10]) if cat_10is else np.array([])
+
+        # Add ra_matched and dec_matched columns to every catalog
+        cat_1. add_column(table.Column(np.nan * np.ones(len(cat_1))),  name = 'ra_matched' )
+        cat_1. add_column(table.Column(np.nan * np.ones(len(cat_1))),  name = 'dec_matched')
+
+        cat_2. add_column(table.Column(np.nan * np.ones(len(cat_2))),  name = 'ra_matched' )
+        cat_2. add_column(table.Column(np.nan * np.ones(len(cat_2))),  name = 'dec_matched')
+
+        cat_3. add_column(table.Column(np.nan * np.ones(len(cat_3))),  name = 'ra_matched' )
+        cat_3. add_column(table.Column(np.nan * np.ones(len(cat_3))),  name = 'dec_matched')
+
+        cat_4. add_column(table.Column(np.nan * np.ones(len(cat_4))),  name = 'ra_matched' )
+        cat_4. add_column(table.Column(np.nan * np.ones(len(cat_4))),  name = 'dec_matched')
+
+        cat_5. add_column(table.Column(np.nan * np.ones(len(cat_5))),  name = 'ra_matched' )
+        cat_5. add_column(table.Column(np.nan * np.ones(len(cat_5))),  name = 'dec_matched')
+
+        cat_6. add_column(table.Column(np.nan * np.ones(len(cat_6))),  name = 'ra_matched' )
+        cat_6. add_column(table.Column(np.nan * np.ones(len(cat_6))),  name = 'dec_matched')
+
+        cat_7. add_column(table.Column(np.nan * np.ones(len(cat_7))),  name = 'ra_matched' )
+        cat_7. add_column(table.Column(np.nan * np.ones(len(cat_7))),  name = 'dec_matched')
+
+        cat_8. add_column(table.Column(np.nan * np.ones(len(cat_8))),  name = 'ra_matched' )
+        cat_8. add_column(table.Column(np.nan * np.ones(len(cat_8))),  name = 'dec_matched')
+
+        cat_9. add_column(table.Column(np.nan * np.ones(len(cat_9))),  name = 'ra_matched' )
+        cat_9. add_column(table.Column(np.nan * np.ones(len(cat_9))),  name = 'dec_matched')
+
+        cat_10.add_column(table.Column(np.nan * np.ones(len(cat_10))), name = 'ra_matched' )
+        cat_10.add_column(table.Column(np.nan * np.ones(len(cat_10))), name = 'dec_matched')
+
+        # List of RAs and DECs
+        all_ras  = np.concatenate(( ra1,  ra2,  ra3,  ra4,  ra5,  ra6,  ra7,  ra8,  ra9,  ra10))
+        all_dec  = np.concatenate((dec1, dec2, dec3, dec4, dec5, dec6, dec7, dec8, dec9, dec10))
+        all_cats = np.concatenate([['1'] * len(cat_1),['2'] * len(cat_2),['3'] * len(cat_3),['4'] * len(cat_4),['5'] * len(cat_5),['6'] * len(cat_6),['7'] * len(cat_7),['8'] * len(cat_8),['9'] * len(cat_9),['10'] * len(cat_10)])
+
+        # Length of catalogs
+        catalogs_lengths = np.array([len(cat_1),len(cat_2),len(cat_3),len(cat_4),len(cat_5),len(cat_6),len(cat_7),len(cat_8),len(cat_9),len(cat_10)])
+        catalogs_heads   = np.append(0, np.cumsum(catalogs_lengths))
+
+        # Empty variable for future use
+        merged_list = np.array([])
+
+        # For each object, match to any other known object
+        for i in range(len(all_ras)):
+            if i not in merged_list:
+                #distances     = np.sqrt((all_ras[i] - all_ras) ** 2 + (all_dec[i] - all_dec) ** 2)
+                distances     = angular_separation(all_ras[i], all_dec[i], all_ras, all_dec)
+                # Every object
+                matched       = np.where(distances <  max_separation)[0]
+                # Every object in other catalogs
+                matched_medium = matched[all_cats[matched] != all_cats[i]]
+                # Every object, but not objects that have been matched before
+                matched_final = matched_medium[[k not in merged_list for k in matched_medium]]
+                # Every object in other catalogs, and the object itself
+                matched_final_plus = np.append(i, matched_final)
+
+                # Calculate average RA and DEC
+                matched_ras  = np.nanmean([all_ras[matched_final_plus]])
+                matched_decs = np.nanmean([all_dec[matched_final_plus]])
+
+                # Which catalogs does this corresponds to 
+                matched_cats = all_cats[matched_final_plus]
+
+                # Remove one if there are two objects in the same catalog
+                if len(matched_cats) != len(np.unique(matched_cats)):
+                    final_cat_list = np.array([])
+                    final_star_list = np.array([])
+                    for i in range(len(matched_final_plus)):
+                        if matched_cats[i] not in final_cat_list:
+                            final_cat_list  = np.append(final_cat_list , matched_cats[i]      )
+                            final_star_list = np.append(final_star_list, matched_final_plus[i])
+                    final_star_list = final_star_list.astype(int)
+                else:
+                    final_cat_list  = matched_cats
+                    final_star_list = matched_final_plus
+
+                # Match RAs
+                cat_1 ['ra_matched'][final_star_list[np.where(final_cat_list == '1' )[0]] - catalogs_heads[0]]  = matched_ras
+                cat_2 ['ra_matched'][final_star_list[np.where(final_cat_list == '2' )[0]] - catalogs_heads[1]]  = matched_ras
+                cat_3 ['ra_matched'][final_star_list[np.where(final_cat_list == '3' )[0]] - catalogs_heads[2]]  = matched_ras
+                cat_4 ['ra_matched'][final_star_list[np.where(final_cat_list == '4' )[0]] - catalogs_heads[3]]  = matched_ras
+                cat_5 ['ra_matched'][final_star_list[np.where(final_cat_list == '5' )[0]] - catalogs_heads[4]]  = matched_ras
+                cat_6 ['ra_matched'][final_star_list[np.where(final_cat_list == '6' )[0]] - catalogs_heads[5]]  = matched_ras
+                cat_7 ['ra_matched'][final_star_list[np.where(final_cat_list == '7' )[0]] - catalogs_heads[6]]  = matched_ras
+                cat_8 ['ra_matched'][final_star_list[np.where(final_cat_list == '8' )[0]] - catalogs_heads[7]]  = matched_ras
+                cat_9 ['ra_matched'][final_star_list[np.where(final_cat_list == '9' )[0]] - catalogs_heads[8]]  = matched_ras
+                cat_10['ra_matched'][final_star_list[np.where(final_cat_list == '10')[0]] - catalogs_heads[9]]  = matched_ras
+
+                # Match DECs
+                cat_1 ['dec_matched'][final_star_list[np.where(final_cat_list == '1' )[0]] - catalogs_heads[0]] = matched_decs
+                cat_2 ['dec_matched'][final_star_list[np.where(final_cat_list == '2' )[0]] - catalogs_heads[1]] = matched_decs
+                cat_3 ['dec_matched'][final_star_list[np.where(final_cat_list == '3' )[0]] - catalogs_heads[2]] = matched_decs
+                cat_4 ['dec_matched'][final_star_list[np.where(final_cat_list == '4' )[0]] - catalogs_heads[3]] = matched_decs
+                cat_5 ['dec_matched'][final_star_list[np.where(final_cat_list == '5' )[0]] - catalogs_heads[4]] = matched_decs
+                cat_6 ['dec_matched'][final_star_list[np.where(final_cat_list == '6' )[0]] - catalogs_heads[5]] = matched_decs
+                cat_7 ['dec_matched'][final_star_list[np.where(final_cat_list == '7' )[0]] - catalogs_heads[6]] = matched_decs
+                cat_8 ['dec_matched'][final_star_list[np.where(final_cat_list == '8' )[0]] - catalogs_heads[7]] = matched_decs
+                cat_9 ['dec_matched'][final_star_list[np.where(final_cat_list == '9' )[0]] - catalogs_heads[8]] = matched_decs
+                cat_10['dec_matched'][final_star_list[np.where(final_cat_list == '10')[0]] - catalogs_heads[9]] = matched_decs
+
+                # Add stars to list of read stars
+                merged_list = np.append(merged_list, matched_final)
+
+        joined_catalog = table.Table(np.array([np.nan, np.nan]), names=('ra_matched', 'dec_matched'))
+        if cat_1is  : joined_catalog = table.join(joined_catalog, cat_1 , uniq_col_name = 'ra_matched, dec_matched', join_type = 'outer')
+        if cat_2is  : joined_catalog = table.join(joined_catalog, cat_2 , uniq_col_name = 'ra_matched, dec_matched', join_type = 'outer')
+        if cat_3is  : joined_catalog = table.join(joined_catalog, cat_3 , uniq_col_name = 'ra_matched, dec_matched', join_type = 'outer')
+        if cat_4is  : joined_catalog = table.join(joined_catalog, cat_4 , uniq_col_name = 'ra_matched, dec_matched', join_type = 'outer')
+        if cat_5is  : joined_catalog = table.join(joined_catalog, cat_5 , uniq_col_name = 'ra_matched, dec_matched', join_type = 'outer')
+        if cat_6is  : joined_catalog = table.join(joined_catalog, cat_6 , uniq_col_name = 'ra_matched, dec_matched', join_type = 'outer')
+        if cat_7is  : joined_catalog = table.join(joined_catalog, cat_7 , uniq_col_name = 'ra_matched, dec_matched', join_type = 'outer')
+        if cat_8is  : joined_catalog = table.join(joined_catalog, cat_8 , uniq_col_name = 'ra_matched, dec_matched', join_type = 'outer')
+        if cat_9is  : joined_catalog = table.join(joined_catalog, cat_9 , uniq_col_name = 'ra_matched, dec_matched', join_type = 'outer')
+        if cat_10is : joined_catalog = table.join(joined_catalog, cat_10, uniq_col_name = 'ra_matched, dec_matched', join_type = 'outer')
+
+        # Make format uniform
+        for column_name in joined_catalog.colnames:
+            joined_catalog[column_name].format = ''
+            nans         = np.nan * np.ones(len(joined_catalog))
+            nans         = nans.astype('str')
+            try:
+                valued   = joined_catalog[column_name].data.mask == False
+            except:
+                valued   = np.isfinite(joined_catalog[column_name].data)
+            nans[valued] = np.array(joined_catalog[column_name][valued]).astype('str')
+            joined_catalog[column_name] = table.Column(data = nans, name = column_name, dtype = 'str')
+        joined_catalog = make_nan(joined_catalog)
+
+        return joined_catalog[:-1]
+    else:
+        return table.Table()
+
+def query_everything(ra_deg, dec_deg, search_radius, dust_map = 'SFD'):
+    '''
+    Query every available catalog, dust maps, and join them into
+    a single catalog
+
+    Parameters
+    ---------------
+    ra_deg, dec_deg : Coordinates of the object in degrees.
+    search_radius   : Search radius in arcminutes
+    dust_map        : 'SF' or 'SFD', to query Schlafy and Finkbeiner 2011
+                      or Schlafy, Finkbeiner and Davis 1998
+
+    Returns
+    ---------------
+    One merged catalog, Astropy table
+    '''
+
+    # Query Catalogs
+    catalog_3pi    = query_3pi   (ra_deg, dec_deg, search_radius)
+    catalog_SDSS   = query_SDSS  (ra_deg, dec_deg, search_radius)
+    catalog_2MASS  = query_2MASS (ra_deg, dec_deg, search_radius)
+    catalog_WISE   = query_WISE  (ra_deg, dec_deg, search_radius)
+    catalog_Gaia   = query_gaia  (ra_deg, dec_deg, search_radius)
+
+    # Join Catalogs
+    joined_catalog = merge_ten_catalogs(catalog_3pi,catalog_SDSS,table.Table(),table.Table(),catalog_2MASS,table.Table(),catalog_WISE,table.Table(),table.Table(),catalog_Gaia,'raStack_3pi','ra_sdss','RA_ned','RA_simbad','RAJ2000_2mass','RAJ2000_glade','RAJ2000_wise','RAJ2000_nomad','RAJ2000_CFHTLS','RA_ICRS_gaia','decStack_3pi','dec_sdss','DEC_ned','DEC_simbad','DEJ2000_2mass','DEJ2000_glade','DEJ2000_wise','DEJ2000_nomad','DEJ2000_CFHTLS','DE_ICRS_gaia')
+
+    if joined_catalog:
+        # Get coordinates from good surveys
+        if 'raStack_3pi' in joined_catalog.colnames:
+            good_3pi_ra  = flot(joined_catalog['raStack_3pi' ])
+            good_3pi_dec = flot(joined_catalog['decStack_3pi'])
+        else:
+            good_3pi_ra  = np.nan * np.ones(len(joined_catalog))
+            good_3pi_dec = np.nan * np.ones(len(joined_catalog))
+
+        if 'ra_sdss' in joined_catalog.colnames:
+            good_sdss_ra  = flot(joined_catalog['ra_sdss' ])
+            good_sdss_dec = flot(joined_catalog['dec_sdss'])
+        else:
+            good_sdss_ra  = np.nan * np.ones(len(joined_catalog))
+            good_sdss_dec = np.nan * np.ones(len(joined_catalog))
+
+        if 'RAJ2000_2mass' in joined_catalog.colnames:
+            good_2mass_ra  = flot(joined_catalog['RAJ2000_2mass'])
+            good_2mass_dec = flot(joined_catalog['DEJ2000_2mass'])
+        else:
+            good_2mass_ra  = np.nan * np.ones(len(joined_catalog))
+            good_2mass_dec = np.nan * np.ones(len(joined_catalog))
+
+        if 'RAJ2000_wise' in joined_catalog.colnames:
+            good_wise_ra  = flot(joined_catalog['RAJ2000_wise'])
+            good_wise_dec = flot(joined_catalog['DEJ2000_wise'])
+        else:
+            good_wise_ra  = np.nan * np.ones(len(joined_catalog))
+            good_wise_dec = np.nan * np.ones(len(joined_catalog))
+
+        if 'RA_ICRS_gaia' in joined_catalog.colnames:
+            good_gaia_ra  = flot(joined_catalog['RA_ICRS_gaia'])
+            good_gaia_dec = flot(joined_catalog['DE_ICRS_gaia'])
+        else:
+            good_gaia_ra  = np.nan * np.ones(len(joined_catalog))
+            good_gaia_dec = np.nan * np.ones(len(joined_catalog))
+
+        # Average them
+        better_ra  = np.nanmean([good_3pi_ra , good_sdss_ra , good_2mass_ra , good_wise_ra , good_gaia_ra ], axis = 0)
+        better_dec = np.nanmean([good_3pi_dec, good_sdss_dec, good_2mass_dec, good_wise_dec, good_gaia_dec], axis = 0)
+
+        real_ra  = np.isfinite(better_ra)
+        real_dec = np.isfinite(better_dec)
+        joined_catalog[real_ra]['ra_matched']   = better_ra [real_ra]
+        joined_catalog[real_dec]['dec_matched'] = better_dec[real_dec]
+
+        # Append Extinction
+        all_ras  = flot(joined_catalog['ra_matched'])
+        all_decs = flot(joined_catalog['dec_matched'])
+        extinctions = query_dust(all_ras, all_decs, dust_map)
+        joined_catalog.add_column(table.Column(extinctions),  name = 'extinction')
+
+    return joined_catalog
+
+def query_relevant(ra_deg, dec_deg, search_radius = 1.0, dust_map = 'SFD'):
     '''
     Query SDSS, 3PI, and the available dust maps, and then merge
     them into one big catalog
@@ -525,9 +971,9 @@ def get_catalog(object_name, ra_deg, dec_deg, search_radius = 1.0, dust_map = 'S
     if (len(catalog_files) == 0) | reimport_catalog:
         # Attempt to query everything twice
         try:
-            data_catalog_in = query_everything(ra_deg, dec_deg, search_radius, dust_map = dust_map)
+            data_catalog_in = query_relevant(ra_deg, dec_deg, search_radius, dust_map = dust_map)
         except:
-            data_catalog_in = query_everything(ra_deg, dec_deg, search_radius, dust_map = dust_map)
+            data_catalog_in = query_relevant(ra_deg, dec_deg, search_radius, dust_map = dust_map)
         if data_catalog_in:
             pass
         else:
@@ -545,7 +991,7 @@ def get_catalog(object_name, ra_deg, dec_deg, search_radius = 1.0, dust_map = 'S
 
     return data_catalog_out
 
-def get_kron_and_psf(color, catalog, data):
+def get_kron_and_psf(color, catalog, data, error = False):
     '''
     Extract the Kron and PSF magnitude from the 3PI or SDSS catalog
 
@@ -554,6 +1000,7 @@ def get_kron_and_psf(color, catalog, data):
     color   : band of the data (u, g, r, i, z, y)
     catalog : 3pi or sdss
     data    : catalog data
+    error   : Return the sigma instead
 
     Output
     ---------------
@@ -562,14 +1009,22 @@ def get_kron_and_psf(color, catalog, data):
 
     if catalog == '3pi':
         if '%sKronMag_3pi'%color in data.colnames:
-            kron_magnitudes = flot(data['%sKronMag_3pi'%color])
-            psf_magnitude   = flot(data['%sPSFMag_3pi'%color])
+            if error:
+                kron_magnitudes = flot(data['%sKronMagErr_3pi'%color])
+                psf_magnitude   = flot(data['%sPSFMagErr_3pi'%color])
+            else:
+                kron_magnitudes = flot(data['%sKronMag_3pi'%color])
+                psf_magnitude   = flot(data['%sPSFMag_3pi'%color])
         else:
             return np.nan * np.ones(len(data)), np.nan * np.ones(len(data))
     elif catalog == 'sdss':
         if 'modelMag_%s_sdss'%color in data.colnames:
-            kron_magnitudes = flot(data['modelMag_%s_sdss'%color])
-            psf_magnitude   = flot(data['psfMag_%s_sdss'%color])
+            if error:
+                kron_magnitudes = flot(data['modelMagErr_%s_sdss'%color])
+                psf_magnitude   = flot(data['psfMagErr_%s_sdss'%color])
+            else:
+                kron_magnitudes = flot(data['modelMag_%s_sdss'%color])
+                psf_magnitude   = flot(data['psfMag_%s_sdss'%color])
         else:
             return np.nan * np.ones(len(data)), np.nan * np.ones(len(data))
     else:
@@ -638,7 +1093,7 @@ def estimate_nature(kron_mag, psf_mag, kron_magnitudes, psf_magnitude, clear_sta
 
     return galaxyness
 
-def append_nature(classification_catalog, data_catalog_out, clear_stars, clear_galaxy, neighbors = 20):
+def append_nature(object_name, classification_catalog, data_catalog_out, clear_stars, clear_galaxy, neighbors = 20, recalculate_nature = False):
     '''
     Add a column to the catalog of data with the estimated nature of each object,
     based on the classification from the CFHLST catalog. 0 is a star, 1 is a 
@@ -646,62 +1101,72 @@ def append_nature(classification_catalog, data_catalog_out, clear_stars, clear_g
 
     Parameters
     ---------------
+    object_name            : Name of the object
     classification_catalog : CFHLST catalog
     data_catalog_out       : Catalog with data to classify
     clear_stars            : Which objects in the catalog are clearly stars 
     clear_galaxy           : Which objects in the catalog are clearly galaxies
     neighbors              : How many neighbors to consider when classifying the objects
+    recalculate_nature     : Overwrite existing Nature column?
 
     Output
     ---------------
     data_catalog with an extra column
     '''
 
-    # Data to search for
-    filters = ['g'  , 'r'   , 'i'   , 'z'   , 'y'  , 'u'   , 'g'   , 'r'   , 'i'   , 'z'   ]
-    surveys = ['3pi', '3pi' , '3pi' , '3pi' , '3pi', 'sdss', 'sdss', 'sdss', 'sdss', 'sdss']
+    if recalculate_nature or ('object_nature' not in data_catalog_out.colnames):
+        # Data to search for
+        filters = ['g'  , 'r'   , 'i'   , 'z'   , 'y'  , 'u'   , 'g'   , 'r'   , 'i'   , 'z'   ]
+        surveys = ['3pi', '3pi' , '3pi' , '3pi' , '3pi', 'sdss', 'sdss', 'sdss', 'sdss', 'sdss']
 
-    # Estimate Nature in each filter
-    print('Calculating Nature ...')
-    nature_array = np.array([
-    [estimate_nature(*get_kron_and_psf(filters[0], surveys[0], data_catalog_out[k:k+1]), *get_kron_and_psf(filters[0], surveys[0], classification_catalog), clear_stars, clear_galaxy, filters[0], surveys[0], neighbors),
-     estimate_nature(*get_kron_and_psf(filters[1], surveys[1], data_catalog_out[k:k+1]), *get_kron_and_psf(filters[1], surveys[1], classification_catalog), clear_stars, clear_galaxy, filters[1], surveys[1], neighbors),
-     estimate_nature(*get_kron_and_psf(filters[2], surveys[2], data_catalog_out[k:k+1]), *get_kron_and_psf(filters[2], surveys[2], classification_catalog), clear_stars, clear_galaxy, filters[2], surveys[2], neighbors),
-     estimate_nature(*get_kron_and_psf(filters[3], surveys[3], data_catalog_out[k:k+1]), *get_kron_and_psf(filters[3], surveys[3], classification_catalog), clear_stars, clear_galaxy, filters[3], surveys[3], neighbors),
-     estimate_nature(*get_kron_and_psf(filters[4], surveys[4], data_catalog_out[k:k+1]), *get_kron_and_psf(filters[4], surveys[4], classification_catalog), clear_stars, clear_galaxy, filters[4], surveys[4], neighbors),
-     estimate_nature(*get_kron_and_psf(filters[5], surveys[5], data_catalog_out[k:k+1]), *get_kron_and_psf(filters[5], surveys[5], classification_catalog), clear_stars, clear_galaxy, filters[5], surveys[5], neighbors),
-     estimate_nature(*get_kron_and_psf(filters[6], surveys[6], data_catalog_out[k:k+1]), *get_kron_and_psf(filters[6], surveys[6], classification_catalog), clear_stars, clear_galaxy, filters[6], surveys[6], neighbors),
-     estimate_nature(*get_kron_and_psf(filters[7], surveys[7], data_catalog_out[k:k+1]), *get_kron_and_psf(filters[7], surveys[7], classification_catalog), clear_stars, clear_galaxy, filters[7], surveys[7], neighbors),
-     estimate_nature(*get_kron_and_psf(filters[8], surveys[8], data_catalog_out[k:k+1]), *get_kron_and_psf(filters[8], surveys[8], classification_catalog), clear_stars, clear_galaxy, filters[8], surveys[8], neighbors),
-     estimate_nature(*get_kron_and_psf(filters[9], surveys[9], data_catalog_out[k:k+1]), *get_kron_and_psf(filters[9], surveys[9], classification_catalog), clear_stars, clear_galaxy, filters[9], surveys[9], neighbors)] for k in range(len(data_catalog_out))]).T
+        # Estimate Nature in each filter
+        print('Calculating Nature ...')
+        nature_array = np.array([
+        [estimate_nature(*get_kron_and_psf(filters[0], surveys[0], data_catalog_out[k:k+1]), *get_kron_and_psf(filters[0], surveys[0], classification_catalog), clear_stars, clear_galaxy, filters[0], surveys[0], neighbors),
+         estimate_nature(*get_kron_and_psf(filters[1], surveys[1], data_catalog_out[k:k+1]), *get_kron_and_psf(filters[1], surveys[1], classification_catalog), clear_stars, clear_galaxy, filters[1], surveys[1], neighbors),
+         estimate_nature(*get_kron_and_psf(filters[2], surveys[2], data_catalog_out[k:k+1]), *get_kron_and_psf(filters[2], surveys[2], classification_catalog), clear_stars, clear_galaxy, filters[2], surveys[2], neighbors),
+         estimate_nature(*get_kron_and_psf(filters[3], surveys[3], data_catalog_out[k:k+1]), *get_kron_and_psf(filters[3], surveys[3], classification_catalog), clear_stars, clear_galaxy, filters[3], surveys[3], neighbors),
+         estimate_nature(*get_kron_and_psf(filters[4], surveys[4], data_catalog_out[k:k+1]), *get_kron_and_psf(filters[4], surveys[4], classification_catalog), clear_stars, clear_galaxy, filters[4], surveys[4], neighbors),
+         estimate_nature(*get_kron_and_psf(filters[5], surveys[5], data_catalog_out[k:k+1]), *get_kron_and_psf(filters[5], surveys[5], classification_catalog), clear_stars, clear_galaxy, filters[5], surveys[5], neighbors),
+         estimate_nature(*get_kron_and_psf(filters[6], surveys[6], data_catalog_out[k:k+1]), *get_kron_and_psf(filters[6], surveys[6], classification_catalog), clear_stars, clear_galaxy, filters[6], surveys[6], neighbors),
+         estimate_nature(*get_kron_and_psf(filters[7], surveys[7], data_catalog_out[k:k+1]), *get_kron_and_psf(filters[7], surveys[7], classification_catalog), clear_stars, clear_galaxy, filters[7], surveys[7], neighbors),
+         estimate_nature(*get_kron_and_psf(filters[8], surveys[8], data_catalog_out[k:k+1]), *get_kron_and_psf(filters[8], surveys[8], classification_catalog), clear_stars, clear_galaxy, filters[8], surveys[8], neighbors),
+         estimate_nature(*get_kron_and_psf(filters[9], surveys[9], data_catalog_out[k:k+1]), *get_kron_and_psf(filters[9], surveys[9], classification_catalog), clear_stars, clear_galaxy, filters[9], surveys[9], neighbors)] for k in range(len(data_catalog_out))]).T
 
-    # Average Nature (Ignoring 0.5's)
-    nature_array[nature_array == 0.5] = np.nan
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=RuntimeWarning)
-        average_nature = np.nanmean(nature_array, axis = 0)
-    average_nature[np.isnan(average_nature)] = 0.5
-    # Names for the nature columns
-    column_names = ['nature_%s_%s'%(i, j) for i, j in zip(filters, surveys)]
-    output_types = ['float64'] * len(filters)
+        # Average Nature (Ignoring 0.5's)
+        nature_array[nature_array == 0.5] = np.nan
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            average_nature = np.nanmean(nature_array, axis = 0)
+        average_nature[np.isnan(average_nature)] = 0.5
+        # Names for the nature columns
+        column_names = ['nature_%s_%s'%(i, j) for i, j in zip(filters, surveys)]
+        output_types = ['float64'] * len(filters)
 
-    # Append nature to the input catalog
-    data_catalog_out.add_column(table.Column(data = nature_array[0], name = column_names[0], dtype = 'float64'))
-    data_catalog_out.add_column(table.Column(data = nature_array[1], name = column_names[1], dtype = 'float64'))
-    data_catalog_out.add_column(table.Column(data = nature_array[2], name = column_names[2], dtype = 'float64'))
-    data_catalog_out.add_column(table.Column(data = nature_array[3], name = column_names[3], dtype = 'float64'))
-    data_catalog_out.add_column(table.Column(data = nature_array[4], name = column_names[4], dtype = 'float64'))
-    data_catalog_out.add_column(table.Column(data = nature_array[5], name = column_names[5], dtype = 'float64'))
-    data_catalog_out.add_column(table.Column(data = nature_array[6], name = column_names[6], dtype = 'float64'))
-    data_catalog_out.add_column(table.Column(data = nature_array[7], name = column_names[7], dtype = 'float64'))
-    data_catalog_out.add_column(table.Column(data = nature_array[8], name = column_names[8], dtype = 'float64'))
-    data_catalog_out.add_column(table.Column(data = nature_array[9], name = column_names[9], dtype = 'float64'))
-    data_catalog_out.add_column(table.Column(data =  average_nature, name = 'object_nature', dtype = 'float64'))
+        # Append nature to the input catalog
+        data_catalog_out.add_column(table.Column(data = nature_array[0], name = column_names[0], dtype = 'float64'))
+        data_catalog_out.add_column(table.Column(data = nature_array[1], name = column_names[1], dtype = 'float64'))
+        data_catalog_out.add_column(table.Column(data = nature_array[2], name = column_names[2], dtype = 'float64'))
+        data_catalog_out.add_column(table.Column(data = nature_array[3], name = column_names[3], dtype = 'float64'))
+        data_catalog_out.add_column(table.Column(data = nature_array[4], name = column_names[4], dtype = 'float64'))
+        data_catalog_out.add_column(table.Column(data = nature_array[5], name = column_names[5], dtype = 'float64'))
+        data_catalog_out.add_column(table.Column(data = nature_array[6], name = column_names[6], dtype = 'float64'))
+        data_catalog_out.add_column(table.Column(data = nature_array[7], name = column_names[7], dtype = 'float64'))
+        data_catalog_out.add_column(table.Column(data = nature_array[8], name = column_names[8], dtype = 'float64'))
+        data_catalog_out.add_column(table.Column(data = nature_array[9], name = column_names[9], dtype = 'float64'))
+        data_catalog_out.add_column(table.Column(data =  average_nature, name = 'object_nature', dtype = 'float64'))
 
-    # If there are any nan's make them 0.5
-    data_catalog_out['object_nature'][np.isnan(flot(data_catalog_out['object_nature']))] = 0.5
+        # If there are any nan's make them 0.5
+        data_catalog_out['object_nature'][np.isnan(flot(data_catalog_out['object_nature']))] = 0.5
 
-    return data_catalog_out
+        # Catalog name
+        catalog_name = 'catalogs/%s.cat'%object_name
+        data_catalog_out.write(catalog_name, format='ascii', overwrite=True)
+        print('Wrote ', catalog_name)
+        return data_catalog_out
+    else:
+        return data_catalog_out
+
 
 def get_separation(ra_deg, dec_deg, data_catalog):
     '''
@@ -710,7 +1175,7 @@ def get_separation(ra_deg, dec_deg, data_catalog):
 
     Parameters
     ---------------
-    RA_deg, DEC_deg : Coordinates of the object in degrees.
+    ra_deg, dec_deg : Coordinates of the object in degrees.
     data_catalog: Catalog with coordinates of objects
 
     Output
@@ -945,12 +1410,13 @@ classification_catalog = table.Table.read(classification_catalog_filename, forma
 clear_stars            = np.array(classification_catalog['Nature']) == 0.0
 clear_galaxy           = np.array(classification_catalog['Nature']) == 1.0
 
-def catalog_operations(data_catalog_out, ra_deg, dec_deg, Pcc_filter = 'i', Pcc_filter_alternative = 'r', neighbors = 20):
+def catalog_operations(object_name, data_catalog_out, ra_deg, dec_deg, Pcc_filter = 'i', Pcc_filter_alternative = 'r', neighbors = 20, recalculate_nature = False):
     '''
     Perform basic operations on the catalog related to the transient.
 
     Parameters
     -------------
+    object_name            : Name of the object
     data_catalog_out       : Input astropy table with all objects
     ra_deg, dec_deg        : Coordinates of transient in degrees
     Pcc_filter             : The effective magnitude, radius, and Pcc
@@ -958,6 +1424,7 @@ def catalog_operations(data_catalog_out, ra_deg, dec_deg, Pcc_filter = 'i', Pcc_
     Pcc_filter_alternative : If Pcc_filter is not found, use this one
                              as an acceptable alternative.
     neighbors              : How many neighbors to consider when classifying the objects
+    recalculate_nature     : Overwrite existing Nature column?
 
     Return
     ---------------
@@ -999,7 +1466,7 @@ def catalog_operations(data_catalog_out, ra_deg, dec_deg, Pcc_filter = 'i', Pcc_
         data_catalog_out['modelMag_z_sdss'] = flot(data_catalog_out['modelMag_z_sdss']) - y_correct
 
     # Append nature to catalog [0 = star, 1 = galaxy]
-    data_catalog = append_nature(classification_catalog, data_catalog_out, clear_stars, clear_galaxy, neighbors)
+    data_catalog = append_nature(object_name, classification_catalog, data_catalog_out, clear_stars, clear_galaxy, neighbors, recalculate_nature)
 
     # Calculate separation to each object
     separation = get_separation(ra_deg, dec_deg, data_catalog)
@@ -1026,10 +1493,12 @@ def get_best_host(data_catalog, star_separation = 1, star_cut = 0.1):
 
     Return
     ---------------
-    host_radius     : The half-light radius of the best host in arcsec
-    host_separation : The transient-host separation in arcsec
-    host_Pcc        : The probability of chance coincidence for the best host
-    host_magnitude  : The magnitude of the best host
+    host_radius       : The half-light radius of the best host in arcsec
+    host_separation   : The transient-host separation in arcsec
+    host_Pcc          : The probability of chance coincidence for the best host
+    host_magnitude    : The magnitude of the best host
+    host_ra, host_dec : Host coordinates
+    best_host         : Index of best host
     '''
     
     # If it's close and starry, pick that one
@@ -1045,11 +1514,13 @@ def get_best_host(data_catalog, star_separation = 1, star_cut = 0.1):
         best_host = np.where(data_catalog['chance_coincidence'] == best_Pcc)[0][0]
 
     # Properties of the best host
-    host_radius     = data_catalog['halflight_radius'   ][best_host]
-    host_separation = data_catalog['separation'         ][best_host]
-    host_Pcc        = data_catalog['chance_coincidence' ][best_host]
-    host_magnitude  = data_catalog['effective_magnitude'][best_host]
-    host_nature     = data_catalog['object_nature'      ][best_host]
+    host_radius     = flot(data_catalog['halflight_radius'   ])[best_host]
+    host_separation = flot(data_catalog['separation'         ])[best_host]
+    host_ra         = flot(data_catalog['ra_matched'         ])[best_host]
+    host_dec        = flot(data_catalog['dec_matched'        ])[best_host]
+    host_Pcc        = flot(data_catalog['chance_coincidence' ])[best_host]
+    host_magnitude  = flot(data_catalog['effective_magnitude'])[best_host]
+    host_nature     = flot(data_catalog['object_nature'      ])[best_host]
 
     if 'z_sdss' in data_catalog.colnames:
         photoz          = data_catalog['z_sdss'][best_host]
@@ -1059,7 +1530,7 @@ def get_best_host(data_catalog, star_separation = 1, star_cut = 0.1):
     else:
         photoz = photoz_err = specz = specz_err = np.nan
 
-    return host_radius, host_separation, host_Pcc, host_magnitude, host_nature, photoz, photoz_err, specz, specz_err
+    return host_radius, host_separation, host_ra, host_dec, host_Pcc, host_magnitude, host_nature, photoz, photoz_err, specz, specz_err, best_host
 
 # Extinction
 def get_extinction(ra_deg, dec_deg, dust_map = 'SFD'):

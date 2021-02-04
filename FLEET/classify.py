@@ -1,61 +1,14 @@
 from FLEET.transient import get_transient_info, generate_lightcurve, ignore_data
 from FLEET.catalog import get_catalog, catalog_operations, get_best_host, get_extinction
 from sklearn.ensemble import RandomForestClassifier
-from astropy.coordinates import Distance
 from imblearn.over_sampling import SMOTE
 from FLEET.lightcurve import fit_linex
-from FLEET.plot import make_plot
+from FLEET.plot import make_plot, calculate_observability, redshift_magnitude, quick_plot
 from astropy import table
 import pkg_resources
 import numpy as np
 import glob
 import os
-
-def redshift_magnitude(magnitude, redshift, sigma = 0):
-    """
-    This function will calculate the absolute magnitude of an object 
-    given it's apparent magntiude and redshift. Taken from 
-    http://www.astro.ufl.edu/~guzman/ast7939/projects/project01.html
-    And not applying a K, extinction, nor color correction.
-
-    Parameters
-    ---------------
-    magnitude : Apparent magnitude of the source
-    redshift  : Redshift of the source
-    sigma     : Errorbar on the redshift
-
-    Output
-    ---------------
-    Absolute Magnitude
-    """
-
-    # Luminosity Distance in parsecs 
-    D_L = Distance(z = redshift).pc
-
-    # Distance Modulus
-    DM = 5 * np.log10(D_L / 10)
-
-    # Absolute Magnitude
-    M = magnitude - DM
-
-    if sigma == 0:
-        return M, ''
-    else:
-        D_Lplus = Distance(z = redshift + sigma).pc
-        if redshift - sigma >= 0:
-            D_Lminus = Distance(z = redshift - sigma).pc
-        else:
-            D_Lminus = Distance(z = 0).pc
-
-        DMplus = 5 * np.log10(D_Lplus / 10)
-        DMminus = 5 * np.log10(D_Lminus / 10)
-
-        Mplus = DMplus - DM
-        Mminus = DM - DMminus
-
-        error = np.abs(0.5 * (Mplus + Mminus))
-
-    return M, error
 
 def create_features(object_name, red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, model_color, bright_mjd, first_mjd, green_brightest, red_brightest, host_radius, host_separation, host_Pcc, host_magnitude, hostless_cut = 0.1, redshift = np.nan):
     '''
@@ -227,11 +180,11 @@ def create_training_testing(object_name, features_table, training_days = 20, mod
     clf.fit(data_train_smote, class_train_smote)
 
     # Predict Excluded Object
-    predicted_probability = clf.predict_proba(testing_data)
+    predicted_probability = 100 * clf.predict_proba(testing_data)
 
     return predicted_probability
 
-def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan, acceptance_radius = 3, import_ZTF = True, import_OSC = True, import_local = True, import_lightcurve = True, reimport_catalog = False, search_radius = 1.0, dust_map = 'SFD', Pcc_filter = 'i', Pcc_filter_alternative = 'r', star_separation = 1, star_cut = 0.1, date_range = np.inf, n_walkers = 50, n_steps = 500, n_cores = 1, model = 'single', training_days = 20, hostless_cut = 0.1, sorting_state = 42, clean = 0, SMOTE_state = 42, clf_state = 42, n_estimators = 100, max_depth = 7, feature_set = 13, neighbors = 20, classifier = '', plot_lightcurve = False, save_features = False, overwrite_features = False):
+def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan, acceptance_radius = 3, import_ZTF = True, import_OSC = True, import_local = True, import_lightcurve = True, reimport_catalog = False, search_radius = 1.0, dust_map = 'SFD', Pcc_filter = 'i', Pcc_filter_alternative = 'r', star_separation = 1, star_cut = 0.1, date_range = np.inf, n_walkers = 50, n_steps = 500, n_cores = 1, model = 'single', training_days = 20, hostless_cut = 0.1, sorting_state = 42, clean = 0, SMOTE_state = 42, clf_state = 42, n_estimators = 100, max_depth = 7, feature_set = 13, neighbors = 20, recalculate_nature = False, classifier = '', n_samples = 3, object_class = '', plot_lightcurve = False, do_observability = False, save_features = False, overwrite_features = False):
     '''
     Main Function to predict the probability of an object to be a Superluminous Supernovae
     using the training set provided and a random forest algorithim. The function will query
@@ -279,9 +232,14 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
     max_depth               : Depth of trees for random forest
     feature_set             : Set of features to use
     neighbors               : neighbors to use for star/galaxy separator
+    recalculate_nature      : Overwrite existing Nature column?
     classifier              : Pick the classifier to use based on the available information
-                              either 'quick', 'redshift', 'host', or 'late'. 
+                              either 'quick', 'redshift', 'host', 'late', or 'all'. If empty
+                              default (or specified) values will be used.
+    n_samples               : Number of random seeds to use, only for the 'all' classifier
+    object_class            : Transient type, to overwrite any existing classes
     plot_lightcurve         : Save an output plot with the light curve and PS1 image?
+    do_observability        : Calculate Observavility from Magellan and MMT?
     save_features           : Save the features table to a file
     overwrite_features      : Overwrite features?
 
@@ -301,7 +259,7 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
                 return
 
     ##### Basic transient info #####
-    ra_deg, dec_deg, transient_source, object_name, ztf_data, ztf_name, tns_name, osc_data = get_transient_info(object_name_in, ra_in, dec_in, acceptance_radius, import_ZTF, import_OSC, import_lightcurve)
+    ra_deg, dec_deg, transient_source, object_name, ztf_data, ztf_name, tns_name, object_class, osc_data = get_transient_info(object_name_in, ra_in, dec_in, object_class, acceptance_radius, import_ZTF, import_OSC, import_lightcurve)
     if ra_deg == '--': return
     print('%s %s %s'%(object_name, ra_deg, dec_deg))
     if dec_deg <= -32:
@@ -326,6 +284,10 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
     ##### Fit Lightcurve #####
     red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, model_color, bright_mjd, first_mjd, green_brightest, red_brightest = fit_linex(output_table, date_range, n_walkers, n_steps, n_cores, model, g_correct, r_correct)
     if np.isnan(red_amplitude):
+        if plot_lightcurve:
+            first_mjd  = np.nanmin(np.array(output_table['MJD']).astype(float))
+            bright_mjd = output_table['MJD'][np.nanargmin(output_table['Mag'])]
+            quick_plot(object_name, ra_deg, dec_deg, output_table, first_mjd, bright_mjd)
         return
 
     ##### Catalog data #####
@@ -335,13 +297,31 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
         return
 
     ##### Catalog Operations #####
-    data_catalog = catalog_operations(data_catalog_out, ra_deg, dec_deg, Pcc_filter, Pcc_filter_alternative, neighbors)
+    data_catalog = catalog_operations(object_name, data_catalog_out, ra_deg, dec_deg, Pcc_filter, Pcc_filter_alternative, neighbors, recalculate_nature)
 
     ##### Find the Best host #####
-    host_radius, host_separation, host_Pcc, host_magnitude, host_nature, photoz, photoz_err, specz, specz_err = get_best_host(data_catalog, star_separation, star_cut)
+    host_radius, host_separation, host_ra, host_dec, host_Pcc, host_magnitude, host_nature, photoz, photoz_err, specz, specz_err, best_host = get_best_host(data_catalog, star_separation, star_cut)
+
+    ##### Use Appropriate Redshift #####
+    if np.isfinite(float(redshift)):
+        # User specified redshift
+        use_redshift   = float(redshift)
+        redshift_label = 'specz'
+    if np.isfinite(float(specz)):
+        # Spectroscopic Redshift
+        use_redshift   = float(specz)
+        redshift_label = 'specz'
+    elif np.isfinite(float(photoz)):
+        # Photometric Redshift
+        use_redshift   = float(photoz)
+        redshift_label = 'photoz'
+    else:
+        # No Redshift
+        use_redshift   = np.nan
+        redshift_label = 'none'
 
     ##### Get Features #####
-    features_table = create_features(object_name, red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, model_color, bright_mjd, first_mjd, green_brightest, red_brightest, host_radius, host_separation, host_Pcc, host_magnitude, hostless_cut, redshift)
+    features_table = create_features(object_name, red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, model_color, bright_mjd, first_mjd, green_brightest, red_brightest, host_radius, host_separation, host_Pcc, host_magnitude, hostless_cut, use_redshift)
 
     ##### Save Features for training #####
     if save_features:
@@ -352,23 +332,99 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
         features_table.write(filename, format = 'ascii', overwrite = True)
         return
 
+    # Empty variables (9 is the number of classes)
+    quick_probability_average    = np.nan * np.ones(9)
+    quick_probability_std        = np.nan * np.ones(9)
+    late_probability_average     = np.nan * np.ones(9)
+    late_probability_std         = np.nan * np.ones(9)
+    redshift_probability_average = np.nan * np.ones(9)
+    redshift_probability_std     = np.nan * np.ones(9)
+    host_probability_average     = np.nan * np.ones(9)
+    host_probability_std         = np.nan * np.ones(9)
+
     ##### Run Classifier #####
     if classifier == '':
-        predicted_probability = create_training_testing(object_name, features_table, training_days, model, clean, feature_set, sorting_state, SMOTE_state, clf_state, n_estimators, max_depth, hostless_cut)
+        quick_probability_average    = create_training_testing(object_name, features_table, training_days, model, clean, feature_set, sorting_state, SMOTE_state, clf_state, n_estimators, max_depth, hostless_cut)[0]
     elif classifier == 'quick':
-        predicted_probability = create_training_testing(object_name, features_table, training_days = 20, model = 'single', clean = 0, feature_set = 13, max_depth = 7)
-    elif classifier == 'redshift':
-        predicted_probability = create_training_testing(object_name, features_table, training_days = 20, model = 'single', clean = 0, feature_set = 16, max_depth = 7)
+        quick_probability_average    = create_training_testing(object_name, features_table, training_days = 20, model = 'single', clean = 0, feature_set = 13, max_depth = 7)[0]
     elif classifier == 'late':
-        predicted_probability = create_training_testing(object_name, features_table, training_days = 70, model = 'double', clean = 0, feature_set = 7 , max_depth = 9)
+        late_probability_average     = create_training_testing(object_name, features_table, training_days = 70, model = 'double', clean = 0, feature_set = 7 , max_depth = 9)[0]
+    elif classifier == 'redshift':
+        redshift_probability_average = create_training_testing(object_name, features_table, training_days = 20, model = 'single', clean = 0, feature_set = 16, max_depth = 7)[0]
     elif classifier == 'host':
-        predicted_probability = create_training_testing(object_name, features_table, training_days = 70, model = 'double', clean = 1, feature_set = 7 , max_depth = 9)
+        host_probability_average     = create_training_testing(object_name, features_table, training_days = 70, model = 'double', clean = 1, feature_set = 7 , max_depth = 9)[0]
 
-    # Predicted Probability to be ['Nuclear','SLSN-I','SLSN-II','SNII','SNIIb','SNIIn','SNIa','SNIbc','Star']
-    P_SLSNI = predicted_probability[0][1]
-    # Return Probability that the object is a SLSN-I
+    ##### All in one classifier #####
+    elif classifier == 'all':
+        # Quick Classifier
+        for i in range(n_samples):
+            quick_probability_n = create_training_testing(object_name, features_table, training_days = 20, model = 'single', clean = 0, feature_set = 13, max_depth = 7, clf_state = int(39 + i))
+            if i == 0:
+                quick_probability = quick_probability_n
+            else:
+                quick_probability = np.vstack([quick_probability, quick_probability_n])
+        quick_probability_average = np.average(quick_probability, axis = 0)
+        quick_probability_std     = np.std    (quick_probability, axis = 0)
+
+        # Late Classifier
+        for i in range(n_samples):
+            late_probability_n = create_training_testing(object_name, features_table, training_days = 70, model = 'double', clean = 0, feature_set = 7, max_depth = 9, clf_state = int(39 + i))
+            if i == 0:
+                late_probability = late_probability_n
+            else:
+                late_probability = np.vstack([late_probability, late_probability_n])
+        late_probability_average = np.average(late_probability, axis = 0)
+        late_probability_std     = np.std    (late_probability, axis = 0)
+
+        # Redsfhit Classifier
+        if np.isfinite(np.float(use_redshift)) & (host_Pcc <= hostless_cut):
+            for i in range(n_samples):
+                redshift_probability_n = create_training_testing(object_name, features_table, training_days = 20, model = 'single', clean = 0, feature_set = 16, max_depth = 7, clf_state = int(39 + i))
+                if i == 0:
+                    redshift_probability = redshift_probability_n
+                else:
+                    redshift_probability = np.vstack([redshift_probability, redshift_probability_n])
+            redshift_probability_average = np.average(redshift_probability, axis = 0)
+            redshift_probability_std     = np.std    (redshift_probability, axis = 0)
+        else:
+            redshift_probability_average = np.nan * np.ones(len(quick_probability_average))
+            redshift_probability_std     = np.nan * np.ones(len(quick_probability_average))
+
+        # Host Classifier
+        if (host_Pcc <= hostless_cut):
+            for i in range(n_samples):
+                host_probability_n = create_training_testing(object_name, features_table, training_days = 70, model = 'double', clean = 1, feature_set = 7, max_depth = 9, clf_state = int(39 + i))
+                if i == 0:
+                    host_probability = host_probability_n
+                else:
+                    host_probability = np.vstack([host_probability, host_probability_n])
+            host_probability_average = np.average(host_probability, axis = 0)
+            host_probability_std     = np.std    (host_probability, axis = 0)
+        else:
+            host_probability_average = np.nan * np.ones(len(quick_probability_average))
+            host_probability_std     = np.nan * np.ones(len(quick_probability_average))
+
+    # Calculate Time Span
+    detections = (np.array(output_table['UL']) == b'False') & (np.array(output_table['Ignore']) == b'False') & ((output_table['Filter'] == 'r') | (output_table['Filter'] == 'g'))
+    time_span  = np.nanmax(output_table['MJD'][detections]) - np.nanmin(output_table['MJD'][detections])
+
+    Dates_MMT, Airmass_MMT, SunElevation_MMT, Dates_Magellan, Airmass_Magellan, SunElevation_Magellan, MMT_observable, Magellan_observable = calculate_observability(ra_deg, dec_deg, do_observability)
+
+    # Output Array
+    info_data  = np.array([object_name, ztf_name, tns_name, object_class, ra_deg, dec_deg, host_radius, host_separation, host_ra, host_dec, host_Pcc, host_magnitude, host_nature, photoz, photoz_err, specz, specz_err, use_redshift, redshift_label, classifier, time_span, MMT_observable, Magellan_observable, *quick_probability_average, *quick_probability_std, *late_probability_average, *late_probability_std, *redshift_probability_average, *redshift_probability_std, *host_probability_average, *host_probability_std])
+    info_names = ['object_name'           ,'ztf_name'             ,'tns_name'             ,'object_class'         ,'ra_deg'               ,'dec_deg'              ,'host_radius'          ,'host_separation'      ,'host_ra'              ,'host_dec'             ,'host_Pcc'             ,'host_magnitude',
+                  'host_nature'           ,'photoz'               ,'photoz_err'           ,'specz'                ,'specz_err'            ,'use_redshift'         ,'redshift_label'       ,'classifier'           ,'time_span', 'MMT_observable', 'Magellan_observable',
+                  'P_quick_Nuclear'       ,'P_quick_SLSNI'        ,'P_quick_SLSNII'       ,'P_quick_SNII'         ,'P_quick_SNIIb'        ,'P_quick_SNIIn'        ,'P_quick_SNIa'         ,'P_quick_SNIbc'        ,'P_quick_Star',
+                  'P_quick_Nuclear_std'   ,'P_quick_SLSNI_std'    ,'P_quick_SLSNII_std'   ,'P_quick_SNII_std'     ,'P_quick_SNIIb_std'    ,'P_quick_SNIIn_std'    ,'P_quick_SNIa_std'     ,'P_quick_SNIbc_std'    ,'P_quick_Star_std',
+                  'P_late_Nuclear'        ,'P_late_SLSNI'         ,'P_late_SLSNII'        ,'P_late_SNII'          ,'P_late_SNIIb'         ,'P_late_SNIIn'         ,'P_late_SNIa'          ,'P_late_SNIbc'         ,'P_late_Star',
+                  'P_late_Nuclear_std'    ,'P_late_SLSNI_std'     ,'P_late_SLSNII_std'    ,'P_late_SNII_std'      ,'P_late_SNIIb_std'     ,'P_late_SNIIn_std'     ,'P_late_SNIa_std'      ,'P_late_SNIbc_std'     ,'P_late_Star_std',
+                  'P_redshift_Nuclear'    ,'P_redshift_SLSNI'     ,'P_redshift_SLSNII'    ,'P_redshift_SNII'      ,'P_redshift_SNIIb'     ,'P_redshift_SNIIn'     ,'P_redshift_SNIa'      ,'P_redshift_SNIbc'     ,'P_redshift_Star',
+                  'P_redshift_Nuclear_std','P_redshift_SLSNI_std' ,'P_redshift_SLSNII_std','P_redshift_SNII_std'  ,'P_redshift_SNIIb_std' ,'P_redshift_SNIIn_std' ,'P_redshift_SNIa_std'  ,'P_redshift_SNIbc_std' ,'P_redshift_Star_std',
+                  'P_host_Nuclear'        ,'P_host_SLSNI'         ,'P_host_SLSNII'        ,'P_host_SNII'          ,'P_host_SNIIb'         ,'P_host_SNIIn'         ,'P_host_SNIa'          ,'P_host_SNIbc'         ,'P_host_Star',
+                  'P_host_Nuclear_std'    ,'P_host_SLSNI_std'     ,'P_host_SLSNII_std'    ,'P_host_SNII_std'      ,'P_host_SNIIb_std'     ,'P_host_SNIIn_std'     ,'P_host_SNIa_std'      ,'P_host_SNIbc_std'     ,'P_host_Star_std']
+    info_table = table.Table(info_data, names = info_names)
 
     if plot_lightcurve:
-        make_plot(object_name, ra_deg, dec_deg, output_table, first_mjd, bright_mjd, red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, g_correct, r_correct)
-
-    return P_SLSNI
+        make_plot(object_name, ra_deg, dec_deg, output_table, data_catalog, info_table, best_host, host_radius, host_separation, host_ra, host_dec, host_Pcc, host_magnitude, host_nature, first_mjd, bright_mjd, search_radius, star_cut, Dates_MMT, Airmass_MMT, SunElevation_MMT, Dates_Magellan, Airmass_Magellan, SunElevation_Magellan, red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, g_correct, r_correct)
+    
+    return info_table

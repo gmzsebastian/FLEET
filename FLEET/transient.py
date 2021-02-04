@@ -348,7 +348,7 @@ def querry_multiple_osc(object_names, skip = 0, block_size = 20, return_table = 
     names_not_found = ','.join(not_in_osc)
     return names_not_found
 
-def get_tns_coords(tns_name):
+def get_tns_coords(tns_name, object_class):
     '''
     Get the ra and dec of an object from the TNS given its name.
     A tns key is required to run this function, which must be
@@ -356,12 +356,15 @@ def get_tns_coords(tns_name):
 
     Parameters
     -------------
-    tns_name : Name of the object i.e. 2016iet
+    tns_name     : Name of the object i.e. 2016iet
+    object_class : Transient type, to overwrite any existing classes
 
     Return
     ---------------
     ra_deg, dec_deg in degrees floats. If not found then '--'
     '''
+
+    empties = ['',' ','None','--', '-', b'',b' ',b'None',b'--', b'-', None, np.nan, 'nan', b'nan', '0', 0]
 
     # Get TNS key
     key_location = os.path.join(pathlib.Path.home(), 'tns_key.txt')
@@ -387,7 +390,7 @@ def get_tns_coords(tns_name):
 
         # If there was an object found, return its info
         if len(data) == 1:
-            return '--', '--'
+            return '--', '--', '--'
         else:
             # Convert Date
             TNS_date_object  = parser.parse(data['discoverydate'])
@@ -397,14 +400,16 @@ def get_tns_coords(tns_name):
             # Extract data
             ra_in  = data['radeg']
             dec_in = data['decdeg']
+            if object_class not in empties:
+                object_class = data['object_type']['name']
             ra_deg, dec_deg = convert_coords(ra_in, dec_in)
-            return ra_deg, dec_deg
+            return ra_deg, dec_deg, object_class
 
     except Exception as e:
         print('Error Quering TNS : \n'+str(e))
-        return '--', '--'
+        return '--', '--', '--'
 
-def get_transient_info(object_name_in = '', ra_in = '', dec_in = '', acceptance_radius = 3, import_ZTF = True, import_OSC = True, import_lightcurve = True):
+def get_transient_info(object_name_in = '', ra_in = '', dec_in = '', object_class = '', acceptance_radius = 3, import_ZTF = True, import_OSC = True, import_lightcurve = True):
     '''
     Get the coordaintes and name for a transient. Either the coordinates
     and/or the name must be specified. The function will search for the
@@ -415,6 +420,7 @@ def get_transient_info(object_name_in = '', ra_in = '', dec_in = '', acceptance_
     -------------
     object_name_in    : Name of the object
     ra_in, dec_in     : Coordinates of the object
+    object_class      : Transient type, to overwrite any existing classes
     acceptance_radius : Search radius in arcseconds
     import_ZTF        : Import ZTF data or read local file?
     import_OSC        : Import OSC data or read local file?
@@ -456,9 +462,9 @@ def get_transient_info(object_name_in = '', ra_in = '', dec_in = '', acceptance_
                     osc_data = querry_multiple_osc(tns_name, return_table = True, import_OSC = import_OSC)
             else:
                 print('ZTF object %s not found'%object_name)
-                return ['--'] * 8
+                return ['--'] * 9
         elif transient_source == 'TNS':
-            ra_deg, dec_deg = get_tns_coords(object_name)
+            ra_deg, dec_deg, object_class = get_tns_coords(object_name, object_class)
             tns_name = object_name
             # Query OSC for light curve information
             osc_data = querry_multiple_osc(object_name, return_table = True, import_OSC = import_OSC)
@@ -467,10 +473,10 @@ def get_transient_info(object_name_in = '', ra_in = '', dec_in = '', acceptance_
                 ztf_data, ztf_name = get_ztf_name_lightcurve(ra_deg, dec_deg, acceptance_radius, import_ZTF)
             else:
                 print('TNS object %s not found'%object_name)
-                return ['--'] * 8
+                return ['--'] * 9
         else:
             print('object_name %s not recognized, ra and dec required'%object_name)
-            return ['--'] * 8
+            return ['--'] * 9
 
     ###### If there is no name, but only coordinates ######
 
@@ -480,7 +486,7 @@ def get_transient_info(object_name_in = '', ra_in = '', dec_in = '', acceptance_
             ra_deg, dec_deg = convert_coords(ra_in, dec_in)
         except:
             print('Invalid ra, dec input : %s, %s'%(ra_in, dec_in))
-            return ['--'] * 8
+            return ['--'] * 9
 
         # Search the TNS
         tns_name = get_tns_name(ra_deg, dec_deg, acceptance_radius)
@@ -498,7 +504,7 @@ def get_transient_info(object_name_in = '', ra_in = '', dec_in = '', acceptance_
 
         if (ztf_name == '--') & (tns_name == '--'):
             print('object not found for ra, dec = %s, %s. Name required'%(ra_deg, dec_deg))
-            return ['--'] * 8
+            return ['--'] * 9
 
     ###### if there are coordaintes, and a name ######
 
@@ -508,7 +514,7 @@ def get_transient_info(object_name_in = '', ra_in = '', dec_in = '', acceptance_
             ra_deg, dec_deg = convert_coords(ra_in, dec_in)
         except:
             print('Invalid ra, dec input : %s, %s'%(ra_in, dec_in))
-            return ['--'] * 8
+            return ['--'] * 9
 
         # Get transient source and modified name
         transient_source, object_name = transient_origin(object_name_in)
@@ -537,7 +543,7 @@ def get_transient_info(object_name_in = '', ra_in = '', dec_in = '', acceptance_
         if (transient_source == 'TNS') & (tns_name == '--'):
             tns_name = object_name
 
-    return ra_deg, dec_deg, transient_source, object_name, ztf_data, ztf_name, tns_name, osc_data
+    return ra_deg, dec_deg, transient_source, object_name, ztf_data, ztf_name, tns_name, object_class, osc_data
 
 def ignore_data(object_name, output_table):
     '''
@@ -563,6 +569,7 @@ def ignore_data(object_name, output_table):
     ignore_file = glob.glob('ignore/*%s.txt'%object_name)
 
     if len(ignore_file) != 0:
+        print('Ignoring some Data...')
         # Ignore data bounded by these ranges
         ignore_range = np.genfromtxt(ignore_file[0])
 
@@ -599,7 +606,7 @@ def import_my_data(object_name, import_local = True):
     '''
 
     # Empty default table
-    my_data = table.Table(names = ['my_MJD', 'my_Mag', 'my_Err', 'my_Filter', 'my_Telescope'])
+    my_data = table.Table(names = ['MJD', 'Mag', 'MagErr', 'Telescope', 'Filter', 'UL', 'Ignore'])
 
     if import_local == False:
         print('Did not attempt to search for local data \n')
@@ -617,7 +624,7 @@ def import_my_data(object_name, import_local = True):
     # Import data
     if len(my_file) > 0:
         print('Found local data %s'%my_file[0] + '\n')
-        my_data = table.Table(table.Table.read(my_file[0], format='ascii', guess=False), dtype = ['float64', 'float64', 'float64', 'S25', 'S25'], names = ['my_MJD', 'my_Mag', 'my_Err', 'my_Filter', 'my_Telescope'])
+        my_data = table.Table(table.Table.read(my_file[0], format='ascii', guess=False))
 
     return my_data
  
@@ -650,7 +657,7 @@ def generate_lightcurve(ztf_data, osc_data, object_name = '--', ztf_name = '--',
             return
         else:
             try:
-                output_types=['float64','float64','float64','S25','S25','S25','S25','S25','S25']
+                output_types=['float64','float64','float64','S25','S25','S25','S25','S25']
                 output_table = table.Table(table.Table.read(exists[0], format='ascii', guess=False), dtype = output_types)
             except:
                 output_types=['float64','float64','float64','S25','S25','S25','S25','S25','S25','S25','S25','S25']
@@ -659,8 +666,8 @@ def generate_lightcurve(ztf_data, osc_data, object_name = '--', ztf_name = '--',
         return output_table
 
     # Combined Table Parameters
-    output_names = ['MJD'    , 'Mag'    , 'MagErr' , 'Telescope', 'Filter', 'Source', 'UL' , 'Name', 'Ignore']
-    output_types = ['float64', 'float64', 'float64', 'S25'      , 'S25'   , 'S25'   , 'S25', 'S25' , 'S25'   ]
+    output_names = ['MJD'    , 'Mag'    , 'MagErr' , 'Telescope', 'Filter', 'Source', 'UL' , 'Ignore']
+    output_types = ['float64', 'float64', 'float64', 'S25'      , 'S25'   , 'S25'   , 'S25', 'S25'   ]
 
     # Import my data if it exists
     my_data = import_my_data(object_name, import_local)
@@ -671,19 +678,18 @@ def generate_lightcurve(ztf_data, osc_data, object_name = '--', ztf_name = '--',
     flot = lambda x : np.array(x).astype(float)
     if (ztf_name != '--') & ('ZTF' not in ztf_name): ztf_name = 'ZTF' + ztf_name
     # Concatenate and format all tables
-    all_times      = np.concatenate([flot(osc_data['OSC_MJD'])           , flot(my_data['my_MJD'])             , flot(ztf_data['ZTF_MJD'])        ])
-    all_mags       = np.concatenate([flot(osc_data['OSC_Mag'])           , flot(my_data['my_Mag'])             , flot(ztf_data['ZTF_PSF'])        ])
-    all_magerrs    = np.concatenate([flot(osc_data['OSC_Magerr'])        , flot(my_data['my_Err'])             , flot(ztf_data['ZTF_PSFerr'])     ])
-    all_telescopes = np.concatenate([np.array(osc_data['OSC_telescope']) , np.array(my_data['my_Telescope'])   , ['ZTF'] * ztf_len                ]).astype('str')
-    all_filters    = np.concatenate([np.array(osc_data['OSC_filter'])    , np.array(my_data['my_Filter'])      , np.array(ztf_data['ZTF_filter']) ]).astype('str')
+    all_times      = np.concatenate([flot(osc_data['OSC_MJD'])           , flot(my_data['MJD'])                , flot(ztf_data['ZTF_MJD'])        ])
+    all_mags       = np.concatenate([flot(osc_data['OSC_Mag'])           , flot(my_data['Mag'])                , flot(ztf_data['ZTF_PSF'])        ])
+    all_magerrs    = np.concatenate([flot(osc_data['OSC_Magerr'])        , flot(my_data['MagErr'])             , flot(ztf_data['ZTF_PSFerr'])     ])
+    all_telescopes = np.concatenate([np.array(osc_data['OSC_telescope']) , np.array(my_data['Telescope'])      , ['ZTF'] * ztf_len                ]).astype('str')
+    all_filters    = np.concatenate([np.array(osc_data['OSC_filter'])    , np.array(my_data['Filter'])         , np.array(ztf_data['ZTF_filter']) ]).astype('str')
     all_sources    = np.concatenate([['OSC'] * osc_len                   , ['Local'] * my_len                  , ['ZTF'] * ztf_len                ]).astype('str')
-    upperlims      = np.concatenate([np.array(osc_data['OSC_UL'])        , np.array(my_data['my_Err'])         , np.array(ztf_data['ZTF_PSFerr']) ]).astype('str')
-    all_upperlims  = np.array([i in [True, -1.0, 'True', '-1', '-1.0', '-1.', b'True', b'-1', b'-1.0', b'-1.'] for i in upperlims])
-    all_names      = np.concatenate([[tns_name] * osc_len                , [object_name] * my_len              , [ztf_name] * ztf_len             ]).astype('str')
-    all_ignores    = np.concatenate([['False'] * osc_len                 , ['False'] * my_len                  , ['False'] * ztf_len              ])
+    upperlims      = np.concatenate([np.array(osc_data['OSC_UL'])        , np.array(my_data['UL'])             , np.array(ztf_data['ZTF_PSFerr']) ]).astype('str')
+    all_ignores    = np.concatenate([['False'] * osc_len                 , np.array(my_data['Ignore'])         , ['False'] * ztf_len              ])
 
     # Create output Table
-    output_columns  = [all_times , all_mags  , all_magerrs , all_telescopes , all_filters , all_sources , all_upperlims, all_names, all_ignores]
+    all_upperlims   = np.array([i in [True, -1.0, 'True', '-1', '-1.0', '-1.', b'True', b'-1', b'-1.0', b'-1.', 'T'] for i in upperlims])
+    output_columns  = [all_times , all_mags  , all_magerrs , all_telescopes , all_filters , all_sources , all_upperlims, all_ignores]
     output_table_in = table.Table(data = np.array(output_columns).T, names = output_names, dtype = output_types)
 
     # Remove bad lines with no useful data
