@@ -1,4 +1,13 @@
 from setuptools import setup
+from setuptools.command.install import install
+
+
+class InstallAndFetchDustMaps(install):
+    def run(self):
+        super().run()
+        import dustmaps.sfd
+        dustmaps.sfd.fetch()
+
 
 setup(name='fleet-pipe',
       version='1.0.0',
@@ -17,13 +26,13 @@ setup(name='fleet-pipe',
         'bs4',
         'ephem',
         'datetime',
-        'astral',
+        'astral==1.10.1',
         'PyAstronomy',
         'scikit-learn',
+        'imbalanced-learn',
         'Pillow',
         'matplotlib',
         'lmfit',
-        'Astral',
         'ephem',
         'extinction',
         'pandas',
@@ -32,7 +41,9 @@ setup(name='fleet-pipe',
         'pathlib',
         'requests',
         'scipy',
-        'emcee'
+        'emcee',
+        'casjobs @ git+git://github.com/dfm/casjobs@master',
+        'mastcasjobs @ git+git://github.com/rlwastro/mastcasjobs@master',
       ],
       test_suite='nose.collector',
       zip_safe = False)
