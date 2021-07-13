@@ -137,7 +137,11 @@ def get_tns_name(ra_deg, dec_deg, acceptance_radius = 3):
     coordinates RA and DEC for the TNS. Return the name of
     the objects found. You must have a file called tns_key.txt
     in your home directory with a TNS api key in order to use
-    this function.
+    this function. The format of tns_key.txt should be:
+
+    key
+    tns_id
+    username
 
     Parameters
     -------------
@@ -154,11 +158,12 @@ def get_tns_name(ra_deg, dec_deg, acceptance_radius = 3):
 
     # Get Usename and password from tns_key.txt
     key_location = os.path.join(pathlib.Path.home(), 'tns_key.txt')
-    api_key      = str(np.genfromtxt(key_location, dtype = 'str'))
+    key_data = np.genfromtxt(key_location, dtype = 'str')
+    api_key, tns_id, username = str(key_data[0]), key_data[1], str(key_data[2])
 
     # Build JSON query
     url = "https://www.wis-tns.org/api/get"
-    json_list=[("ra",str(ra_deg)), ("dec",str(dec_deg)), ("radius",str(acceptance_radius)), ("units","arcsec"), ("objname",""), ("internal_name","")]
+    json_list=[("ra",str(ra_deg)), ("dec",str(dec_deg)), ("radius",str(acceptance_radius)), ("units","arcsec"), ("objname",""), ("internal_name",""), ("tns_id",tns_id), ("type","user"), ("name",username)]
     search_url=url+'/search'
     try:
         # change json_list to json format
@@ -166,7 +171,10 @@ def get_tns_name(ra_deg, dec_deg, acceptance_radius = 3):
         # construct the list of (key,value) pairs
         search_data=[('api_key',(None, api_key)),('data',(None,json.dumps(json_file)))]
         # search obj using request module
-        response=requests.post(search_url, files=search_data)
+        headers = {'User-Agent':'tns_marker{"tns_id":'+str(tns_id)+', "type":"bot",'\
+                     ' "name":"'+username+'"}'}
+
+        response=requests.post(search_url, files=search_data, headers = headers)
         # Get data
         data = response.json()['data']['reply']
         if len(data) > 0:
@@ -348,11 +356,15 @@ def querry_multiple_osc(object_names, skip = 0, block_size = 20, return_table = 
     names_not_found = ','.join(not_in_osc)
     return names_not_found
 
-def get_tns_coords(tns_name, object_class):
+def get_tns_coords(tns_name, object_class = ''):
     '''
     Get the ra and dec of an object from the TNS given its name.
     A tns key is required to run this function, which must be
-    in your home directory.
+    in your home directory. The format of tns_key.txt should be:
+
+    key
+    tns_id
+    username
 
     Parameters
     -------------
@@ -366,13 +378,14 @@ def get_tns_coords(tns_name, object_class):
 
     empties = ['',' ','None','--', '-', b'',b' ',b'None',b'--', b'-', None, np.nan, 'nan', b'nan', '0', 0]
 
-    # Get TNS key
+    # Get Usename and password from tns_key.txt
     key_location = os.path.join(pathlib.Path.home(), 'tns_key.txt')
-    api_key      = str(np.genfromtxt(key_location, dtype = 'str'))
+    key_data = np.genfromtxt(key_location, dtype = 'str')
+    api_key, tns_id, username = str(key_data[0]), key_data[1], str(key_data[2])
 
     # Build JSON query
     url       = "https://www.wis-tns.org/api/get"
-    json_list = [("objname",tns_name), ("photometry","0")]
+    json_list = [("objname",tns_name), ("photometry","0"), ("tns_id",tns_id), ("type","user"), ("name",username)]
     get_url   = os.path.join(url, 'object')                 
 
     try:
@@ -384,7 +397,11 @@ def get_tns_coords(tns_name, object_class):
         # search obj using request module
         warnings.filterwarnings("ignore")
         print('Querying TNS for coordinates ... \n')
-        response=requests.post(get_url, files=get_data, verify=False)     
+
+        headers = {'User-Agent':'tns_marker{"tns_id":'+str(tns_id)+', "type":"bot",'\
+                     ' "name":"'+username+'"}'}
+
+        response=requests.post(get_url, files=get_data, verify=False, headers=headers)     
         # Get data
         data = response.json()['data']['reply']
 

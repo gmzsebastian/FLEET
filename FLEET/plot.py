@@ -1,8 +1,8 @@
 from matplotlib.ticker import ScalarFormatter
+from FLEET.catalog import get_kron_and_psf
 from astropy.coordinates import SkyCoord
 from astropy.coordinates import Distance
 from FLEET.lightcurve import linex
-from FLEET.catalog import get_kron_and_psf
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
 import matplotlib.dates as md
@@ -78,11 +78,12 @@ def plot_colors(all_bands):
 
     # Make Color Array
     all_colors = np.copy(all_bands.astype('S16')).astype('str')
+    #emptys = ['',' ','None','--', '-', b'',b' ',b'None',b'--', b'-', None, np.nan, 'nan', b'nan', '0', np.inf, 'inf']
 
     # Select region for each filter
-    u_colors      = ((all_colors == "u") | (all_colors == "u'"))
+    u_colors      = ((all_colors == "u") | (all_colors == "u'") | (all_colors == "U"))
     g_colors      = ((all_colors == "g") | (all_colors == "g'"))
-    r_colors      = ((all_colors == 'r') | (all_colors == "r'") | (all_colors == 'R'))
+    r_colors      = ((all_colors == 'r') | (all_colors == "r'") | (all_colors == 'R') | (all_colors == 'Rs'))
     i_colors      = ((all_colors == 'i') | (all_colors == "i'") | (all_colors == 'I'))
     z_colors      = ((all_colors == "z") | (all_colors == "z'")) 
     V_colors      =  all_colors  == 'V'     
@@ -93,25 +94,44 @@ def plot_colors(all_bands):
     orange_colors =  all_colors  == 'orange'
     cyan_colors   =  all_colors  == 'cyan'  
     Clear_colors  =  all_colors  == 'Clear' 
+    UVM2_colors   = ((all_colors == "UVM2") | (all_colors == "M2"))
+    UVW1_colors   = ((all_colors == "UVW1") | (all_colors == "W1"))
+    UVW2_colors   = ((all_colors == "UVW2") | (all_colors == "W2"))
+    F475W_colors  =  all_colors  == 'F475W'
+    F625W_colors  =  all_colors  == 'F625W'
+    F775W_colors  =  all_colors  == 'F775W'
+    H_colors      =  all_colors  == 'H'
+    J_colors      =  all_colors  == 'J'
+    K_colors      = ((all_colors == "K") | (all_colors == "Ks"))
+    #nan_colors    =  np.array([i in emptys for i in all_colors])
 
     # Data that doesn't fall under any other filter
-    k_colors = ((u_colors+g_colors+r_colors+i_colors+z_colors+V_colors+B_colors+C_colors+w_colors+G_colors+orange_colors+cyan_colors+Clear_colors) == False)
+    k_colors = ((u_colors+g_colors+r_colors+i_colors+z_colors+V_colors+B_colors+C_colors+w_colors+G_colors+orange_colors+cyan_colors+Clear_colors+UVM2_colors+UVW1_colors+UVW2_colors+F475W_colors+F625W_colors+F775W_colors+H_colors+J_colors+K_colors) == False)
 
     # Change Filters to Python colors
-    all_colors[u_colors]      = 'navy'
-    all_colors[g_colors]      = 'g'
-    all_colors[r_colors]      = 'r'
-    all_colors[i_colors]      = 'maroon'
-    all_colors[z_colors]      = 'saddlebrown'
-    all_colors[V_colors]      = 'lawngreen'
-    all_colors[B_colors]      = 'darkcyan'
-    all_colors[C_colors]      = 'c'
-    all_colors[w_colors]      = 'goldenrod'
-    all_colors[G_colors]      = 'orange'
+    all_colors[u_colors     ] = 'navy'
+    all_colors[g_colors     ] = 'g'
+    all_colors[r_colors     ] = 'r'
+    all_colors[i_colors     ] = 'maroon'
+    all_colors[z_colors     ] = 'saddlebrown'
+    all_colors[V_colors     ] = 'lawngreen'
+    all_colors[B_colors     ] = 'darkcyan'
+    all_colors[C_colors     ] = 'c'
+    all_colors[w_colors     ] = 'goldenrod'
+    all_colors[G_colors     ] = 'orange'
     all_colors[orange_colors] = 'gold'
-    all_colors[cyan_colors]   = 'blue'
-    all_colors[Clear_colors]  = 'magenta'
-    all_colors[k_colors]      = 'k'
+    all_colors[cyan_colors  ] = 'blue'
+    all_colors[Clear_colors ] = 'magenta'
+    all_colors[UVM2_colors  ] = 'darkorchid'
+    all_colors[UVW1_colors  ] = 'cornflowerblue'
+    all_colors[UVW2_colors  ] = 'deepskyblue'
+    all_colors[F475W_colors ] = 'k'
+    all_colors[F625W_colors ] = 'slategray'
+    all_colors[F775W_colors ] = 'tan'
+    all_colors[H_colors     ] = 'hotpink'
+    all_colors[J_colors     ] = 'mediumvioletred'
+    all_colors[K_colors     ] = 'palevioletred'
+    all_colors[k_colors     ] = 'k'
 
     colors = np.array(np.ndarray.tolist(all_colors))
 
@@ -157,7 +177,7 @@ def plot_1a(time, y_0 = 0.95717, m = 0.01817, t_0 = 4.63783, g_0 = -0.91248, sig
 # Model Type Ia
 time_1a_model_r, magnitude_1a_model_r = plot_1a(np.linspace(-15, 120, 500), 0.92540, 0.0182386,  3.95539, -0.884576, 11.0422, -17.5522, 18.7745)
 
-def quick_plot(object_name, ra_deg, dec_deg, output_table, first_mjd, bright_mjd, g_correct = 0, r_correct = 0):
+def quick_plot(object_name, ra_deg, dec_deg, output_table, first_mjd, bright_mjd, g_correct = 0, r_correct = 0, red_amplitude = np.nan, red_amplitude2 = np.nan, red_offset = np.nan, red_magnitude = np.nan, green_amplitude = np.nan, green_amplitude2 = np.nan, green_offset = np.nan, green_magnitude = np.nan, full_range = False):
     '''
     Create a diagnosis plot with the light curve and field image of a transient
     Parameters
@@ -169,6 +189,19 @@ def quick_plot(object_name, ra_deg, dec_deg, output_table, first_mjd, bright_mjd
     bright_mjd       : Brightest MJD in either g or r from fit_linex()
     g_correct        : extinction value in g band
     r_correct        : extinction value in r band
+
+    red_amplitude    : Parameters from fit_linex()
+    red_amplitude2   :
+    red_offset       :
+    red_magnitude    :
+    green_amplitude  :
+    green_amplitude2 :
+    green_offset     :
+    green_magnitude  :
+
+    full_range       : Plot the entire photometry (True), or just
+                       the relevant portion (False)
+    
     Output
     ---------------
     Saves an output to plots/ directory
@@ -182,7 +215,7 @@ def quick_plot(object_name, ra_deg, dec_deg, output_table, first_mjd, bright_mjd
         os.system("mkdir plots")
 
     # Plot Lightcurve
-    plot_lightcurve(1, 1, 1, output_table_correct, first_mjd, bright_mjd, full_range = True)
+    plot_lightcurve(1, 1, 1, output_table_correct, first_mjd, bright_mjd, full_range = full_range, red_amplitude = red_amplitude, red_amplitude2 = red_amplitude2, red_offset = red_offset, red_magnitude = red_magnitude, green_amplitude = green_amplitude, green_amplitude2 = green_amplitude2, green_offset = green_offset, green_magnitude = green_magnitude)
 
     plt.savefig('plots/%s_quick.pdf'%object_name, bbox_inches = 'tight')
     plt.clf(); plt.close('all')
@@ -696,7 +729,8 @@ def plot_host_information(sub_y, sub_x, sub_n, ra_deg, dec_deg, info_table, host
     if redshift not in emptys:
         if np.isfinite(float(redshift)):
             legend_name += r'z = $%s$ (%s)'%(round(float(redshift), 3), redshift_label[0]) + '\n'
-            absolute_magnitude, _ = redshift_magnitude(transient_magnitude, float(redshift))
+            if float(redshift) > 0:
+                absolute_magnitude, _ = redshift_magnitude(transient_magnitude, float(redshift))
     if photoz not in emptys:
         if np.isfinite(float(photoz)):
             legend_name += r'z = $%s\pm%s$ (%s)'%(round(float(photoz), 3), round(photoz_err, 3), 'photoz') + '\n'
@@ -1160,6 +1194,8 @@ def make_plot(object_name, ra_deg, dec_deg, output_table, data_catalog, info_tab
     # Zoom in if possible
     if (host_separation < search_radius * 30):
         search_radius_close = search_radius / 2
+    else:
+        search_radius_close = search_radius
 
     plt.close('all')
     fig = plt.figure(figsize = (22,16))

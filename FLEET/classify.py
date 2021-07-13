@@ -1,9 +1,9 @@
-from FLEET.transient import get_transient_info, generate_lightcurve, ignore_data
+from FLEET.plot import make_plot, calculate_observability, redshift_magnitude, quick_plot
 from FLEET.catalog import get_catalog, catalog_operations, get_best_host, get_extinction
+from FLEET.transient import get_transient_info, generate_lightcurve, ignore_data
 from sklearn.ensemble import RandomForestClassifier
 from imblearn.over_sampling import SMOTE
 from FLEET.lightcurve import fit_linex
-from FLEET.plot import make_plot, calculate_observability, redshift_magnitude, quick_plot
 from astropy import table
 import pkg_resources
 import numpy as np
@@ -250,21 +250,28 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
     '''
     print('\n################# FLEET #################')
 
+    # Empty Features for if search failed
+    if save_features:
+        filename   = '%s_%s/center_table_%s_%s_%s.txt'%(int(float(date_range)), model, int(float(date_range)), model, object_name_in)
+    features       = np.array(                     [object_name_in,          np.nan,           np.nan,       np.nan,          np.nan,            np.nan,             np.nan,         np.nan,            np.nan,       np.nan,             np.nan,       np.nan,               np.nan,         np.nan,           np.nan,         np.nan,    np.nan,     np.nan,    np.nan])
+    features_table = table.Table(features, names = ['object_name' , 'red_amplitude', 'red_amplitude2', 'red_offset', 'red_magnitude', 'green_amplitude', 'green_amplitude2', 'green_offset', 'green_magnitude', 'delta_time', 'input_separation', 'input_size',  'normal_separation', 'deltamag_red', 'deltamag_green',  'model_color',     'Pcc', 'redshift',  'absmag'],
+                                           dtype = ['S25'         , 'float64'      ,        'float64',    'float64',       'float64',         'float64',          'float64',      'float64',         'float64',    'float64',          'float64',    'float64',            'float64',      'float64',        'float64',      'float64', 'float64',  'float64', 'float64'])
+
     # If the features file already exists, don't overwrite it
     if save_features:
         if not overwrite_features :
-            filename = '%s_%s/center_table_%s_%s_%s.txt'%(int(float(date_range)), model, int(float(date_range)), model, object_name_in)
             if len(glob.glob(filename)) > 0:
                 print('exists')
-                return
+                return table.Table()
 
     ##### Basic transient info #####
     ra_deg, dec_deg, transient_source, object_name, ztf_data, ztf_name, tns_name, object_class, osc_data = get_transient_info(object_name_in, ra_in, dec_in, object_class, acceptance_radius, import_ZTF, import_OSC, import_lightcurve)
-    if ra_deg == '--': return
+    if ra_deg == '--': return table.Table()
     print('%s %s %s'%(object_name, ra_deg, dec_deg))
     if dec_deg <= -32:
         print('dec = %s, too low for SDSS or 3PI'%dec_deg)
-        return 
+        if save_features : features_table.write(filename, format = 'ascii', overwrite = True)
+        return table.Table()
 
     ##### Lightcurve data #####
     output_table = generate_lightcurve(ztf_data, osc_data, object_name, ztf_name, tns_name, import_lightcurve, import_local)
@@ -273,10 +280,12 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
 
     if len(output_table) == 0:
         print('No data in lightcurve')
-        return
+        if save_features : features_table.write(filename, format = 'ascii', overwrite = True)
+        return table.Table()
     if np.sum((output_table['UL'] == 'False') & (output_table['Ignore'] == 'False')) == 0:
         print('No useable data in lightcurve')
-        return
+        if save_features : features_table.write(filename, format = 'ascii', overwrite = True)
+        return table.Table()
 
     # Extinction
     g_correct, r_correct = get_extinction(ra_deg, dec_deg, dust_map)
@@ -287,14 +296,18 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
         if plot_lightcurve:
             first_mjd  = np.nanmin(np.array(output_table['MJD']).astype(float))
             bright_mjd = output_table['MJD'][np.nanargmin(output_table['Mag'])]
-            quick_plot(object_name, ra_deg, dec_deg, output_table, first_mjd, bright_mjd)
-        return
+            quick_plot(object_name, ra_deg, dec_deg, output_table, first_mjd, bright_mjd, full_range = True)
+        # If running normal FLEET, stop here
+        if save_features == False:
+            return table.Table()
 
     ##### Catalog data #####
     data_catalog_out = get_catalog(object_name, ra_deg, dec_deg, search_radius, dust_map, reimport_catalog)
     if len(data_catalog_out) == 0:
         print('No data found in SDSS or 3PI')
-        return
+        # If running normal FLEET, stop here
+        if save_features == False:
+            return table.Table()
 
     ##### Catalog Operations #####
     data_catalog = catalog_operations(object_name, data_catalog_out, ra_deg, dec_deg, Pcc_filter, Pcc_filter_alternative, neighbors, recalculate_nature)
@@ -307,7 +320,7 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
         # User specified redshift
         use_redshift   = float(redshift)
         redshift_label = 'specz'
-    if np.isfinite(float(specz)):
+    elif np.isfinite(float(specz)):
         # Spectroscopic Redshift
         use_redshift   = float(specz)
         redshift_label = 'specz'
@@ -330,7 +343,9 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
         if len(glob.glob(foldername)) == 0:
             os.system('mkdir %s'%foldername)
         features_table.write(filename, format = 'ascii', overwrite = True)
-        return
+        if plot_lightcurve:
+            quick_plot(object_name, ra_deg, dec_deg, output_table, first_mjd, bright_mjd, g_correct, r_correct, red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, full_range = False)
+        return features_table
 
     # Empty variables (9 is the number of classes)
     quick_probability_average    = np.nan * np.ones(9)
