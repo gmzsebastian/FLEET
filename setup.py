@@ -5,8 +5,9 @@ from setuptools.command.install import install
 class InstallAndFetchDustMaps(install):
     def run(self):
         super().run()
-        import dustmaps.sfd
-        dustmaps.sfd.fetch()
+        from dustmaps import config, sfd
+        config.config.reset()
+        sfd.fetch()
 
 
 setup(name='fleet-pipe',
