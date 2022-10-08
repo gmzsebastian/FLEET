@@ -3,6 +3,8 @@
 # FLEET
 Finding Luminous and Exotic Extragalactic Transients.
 
+<p align="center"><img src="FLEET_scheme.png" align="center" alt="FLEET_scheme" width="900"/></p>
+
 A machine-learning pipeline designed to predict the probability of transients to be a superluminous supernova, associated with this paper : http://arxiv.org/abs/2009.01853
 
 # Setup
