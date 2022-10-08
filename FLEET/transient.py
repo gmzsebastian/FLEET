@@ -1,6 +1,7 @@
 from astropy.coordinates import SkyCoord
 from collections import OrderedDict
 from astropy import units as u
+from alerce.core import Alerce
 from astropy.time import Time
 from dateutil import parser
 from astropy import table
@@ -184,7 +185,7 @@ def get_tns_name(ra_deg, dec_deg, acceptance_radius = 3):
 
     return tns_name
 
-def get_ztf_name_lightcurve(ra_deg, dec_deg, acceptance_radius = 3, import_ZTF = True, object_name = '--'):
+def get_ztf_name_lightcurve(ra_deg, dec_deg, acceptance_radius = 3, import_ZTF = True, object_name = '--', query_with = 'Alerce'):
     '''
     Query the MARS database to search for ZTF objects at a given 
     RA and DEC within some acceptance radius. Also download photometry
@@ -197,6 +198,7 @@ def get_ztf_name_lightcurve(ra_deg, dec_deg, acceptance_radius = 3, import_ZTF =
     import_ZTF        : Import ZTF data? If False it will read
                         an existing file
     object_name       : For reading the existing file name
+    query_with        : Query using MARS or Alerce?
 
     Return
     ---------------
@@ -224,34 +226,63 @@ def get_ztf_name_lightcurve(ra_deg, dec_deg, acceptance_radius = 3, import_ZTF =
     if len(glob.glob('ztf')) == 0:
         os.system("mkdir ztf")
 
-    # Cone search format around given coordinates
-    mars_link = 'https://mars.lco.global/?sort_value=jd&sort_order=desc&cone=' + str(ra_deg) + '%2C' + str(dec_deg) + '%2C' + str(acceptance_radius / 3600) + '&format=json'
-    # Attempt to query MARS twice
-    try:
-        print('Quering ZTF ...')
-        mars_request = requests.get(mars_link).json()
-    except:
-        print('Trying again ...')
-        time.sleep(3)
-        mars_request = requests.get(mars_link).json()
-    # Extract object
-    candidate = mars_request['results']
+    if query_with == 'MARS':
+        # Cone search format around given coordinates
+        mars_link = 'https://mars.lco.global/?sort_value=jd&sort_order=desc&cone=' + str(ra_deg) + '%2C' + str(dec_deg) + '%2C' + str(acceptance_radius / 3600) + '&format=json'
+        # Attempt to query MARS twice
+        try:
+            print('Quering ZTF ...')
+            mars_request = requests.get(mars_link).json()
+        except:
+            print('Trying again ...')
+            time.sleep(3)
+            mars_request = requests.get(mars_link).json()
+        # Extract object
+        candidate = mars_request['results']
 
-    # Extract output data if an object was found
-    if len(candidate) > 0:
-        output_data = np.array([(target['candidate']['jd'] - 2400000.5, target['candidate']['magpsf'], target['candidate']['sigmapsf'], target['candidate']['filter']) for target in candidate])
+        # Extract output data if an object was found
+        if len(candidate) > 0:
+            output_data = np.array([(target['candidate']['jd'] - 2400000.5, target['candidate']['magpsf'], target['candidate']['sigmapsf'], target['candidate']['filter']) for target in candidate])
 
-        # Convert to Astropy Table
-        column_names = ['ZTF_MJD', 'ZTF_PSF', 'ZTF_PSFerr', 'ZTF_filter']
-        ztf_data = table.Table(rows = output_data, names = column_names, dtype = ['float64', 'float64', 'float64', 'S25'])
+            # Convert to Astropy Table
+            column_names = ['ZTF_MJD', 'ZTF_PSF', 'ZTF_PSFerr', 'ZTF_filter']
+            ztf_data = table.Table(rows = output_data, names = column_names, dtype = ['float64', 'float64', 'float64', 'S25'])
 
-        # Find object name
-        ztf_name = candidate[0]['objectId']
+            # Find object name
+            ztf_name = candidate[0]['objectId']
 
-        # Save output
-        ztf_data.write('ztf/' + ztf_name + '_ztf.txt', format='ascii', overwrite=True)
-        print('Saved ', 'ztf/' + ztf_name + '_ztf.txt \n')
-    else: print('No ZTF data found \n')
+            # Save output
+            ztf_data.write('ztf/' + ztf_name + '_ztf.txt', format='ascii', overwrite=True)
+            print('Saved ', 'ztf/' + ztf_name + '_ztf.txt \n')
+        else: print('No ZTF data found \n')
+
+    # Query with Alerce
+    elif query_with == 'Alerce':
+        client = Alerce()
+        objects = client.query_objects(ra = ra_deg, dec = dec_deg, radius = acceptance_radius)
+        if len(objects) > 0:
+            object_name = objects['oid'][0]
+            det = client.query_detections(object_name, format="pandas")
+            if len(det) > 0:
+                output_data = table.Table.from_pandas(det)['mjd', 'magpsf', 'sigmapsf', 'fid']
+
+                # Convert to Astropy Table
+                column_names = ['ZTF_MJD', 'ZTF_PSF', 'ZTF_PSFerr', 'ZTF_filter']
+                ztf_data = table.Table(rows = output_data, names = column_names, dtype = ['float64', 'float64', 'float64', 'S25'])
+                ztf_data['ZTF_filter'][ztf_data['ZTF_filter'] == '1'] = 'g'
+                ztf_data['ZTF_filter'][ztf_data['ZTF_filter'] == '2'] = 'r'
+
+                # Find object name
+                ztf_name = object_name
+
+                # Save output
+                ztf_data.write('ztf/' + ztf_name + '_ztf.txt', format='ascii', overwrite=True)
+                print('Saved ', 'ztf/' + ztf_name + '_ztf.txt \n')
+
+            else:
+                print('No ZTF data found \n')
+        else:
+            print('No ZTF data found \n')
 
     return ztf_data, ztf_name
 

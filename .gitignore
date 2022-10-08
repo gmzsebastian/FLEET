@@ -3,6 +3,10 @@
 build/
 dist/
 FLEET.egg-info/
+FLEET/fit.py
+FLEET/plot_curves.py
+FLEET/sne_best.txt
+FLEET/train.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

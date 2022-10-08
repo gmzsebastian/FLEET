@@ -177,7 +177,7 @@ def plot_1a(time, y_0 = 0.95717, m = 0.01817, t_0 = 4.63783, g_0 = -0.91248, sig
 # Model Type Ia
 time_1a_model_r, magnitude_1a_model_r = plot_1a(np.linspace(-15, 120, 500), 0.92540, 0.0182386,  3.95539, -0.884576, 11.0422, -17.5522, 18.7745)
 
-def quick_plot(object_name, ra_deg, dec_deg, output_table, first_mjd, bright_mjd, g_correct = 0, r_correct = 0, red_amplitude = np.nan, red_amplitude2 = np.nan, red_offset = np.nan, red_magnitude = np.nan, green_amplitude = np.nan, green_amplitude2 = np.nan, green_offset = np.nan, green_magnitude = np.nan, full_range = False):
+def quick_plot(object_name, ra_deg, dec_deg, output_table, first_mjd, bright_mjd, g_correct = 0, r_correct = 0, red_amplitude = np.nan, red_amplitude2 = np.nan, red_offset = np.nan, red_magnitude = np.nan, green_amplitude = np.nan, green_amplitude2 = np.nan, green_offset = np.nan, green_magnitude = np.nan, chi2 = np.nan, full_range = False):
     '''
     Create a diagnosis plot with the light curve and field image of a transient
     Parameters
@@ -198,6 +198,7 @@ def quick_plot(object_name, ra_deg, dec_deg, output_table, first_mjd, bright_mjd
     green_amplitude2 :
     green_offset     :
     green_magnitude  :
+    chi2             :
 
     full_range       : Plot the entire photometry (True), or just
                        the relevant portion (False)
@@ -215,12 +216,12 @@ def quick_plot(object_name, ra_deg, dec_deg, output_table, first_mjd, bright_mjd
         os.system("mkdir plots")
 
     # Plot Lightcurve
-    plot_lightcurve(1, 1, 1, output_table_correct, first_mjd, bright_mjd, full_range = full_range, red_amplitude = red_amplitude, red_amplitude2 = red_amplitude2, red_offset = red_offset, red_magnitude = red_magnitude, green_amplitude = green_amplitude, green_amplitude2 = green_amplitude2, green_offset = green_offset, green_magnitude = green_magnitude)
+    plot_lightcurve(1, 1, 1, output_table_correct, first_mjd, bright_mjd, full_range = full_range, red_amplitude = red_amplitude, red_amplitude2 = red_amplitude2, red_offset = red_offset, red_magnitude = red_magnitude, green_amplitude = green_amplitude, green_amplitude2 = green_amplitude2, green_offset = green_offset, green_magnitude = green_magnitude, chi2 = chi2)
 
     plt.savefig('plots/%s_quick.pdf'%object_name, bbox_inches = 'tight')
     plt.clf(); plt.close('all')
 
-def plot_lightcurve(sub_y, sub_x, sub_n, output_table, first_mjd, bright_mjd, red_amplitude = np.nan, red_amplitude2 = np.nan, red_offset = np.nan, red_magnitude = np.nan, green_amplitude = np.nan, green_amplitude2 = np.nan, green_offset = np.nan, green_magnitude = np.nan, subtract_phase = 0, add_phase = 0, plot_model = True, full_range = False, plot_comparison = True):
+def plot_lightcurve(sub_y, sub_x, sub_n, output_table, first_mjd, bright_mjd, red_amplitude = np.nan, red_amplitude2 = np.nan, red_offset = np.nan, red_magnitude = np.nan, green_amplitude = np.nan, green_amplitude2 = np.nan, green_offset = np.nan, green_magnitude = np.nan, chi2 = np.nan, subtract_phase = 0, add_phase = 0, plot_model = True, full_range = False, plot_comparison = True):
     '''
     Plot the light curve and model for a given transient
 
@@ -239,6 +240,7 @@ def plot_lightcurve(sub_y, sub_x, sub_n, output_table, first_mjd, bright_mjd, re
     green_amplitude2 :
     green_offset     :
     green_magnitude  :
+    chi2             :
 
     subtract_phase   : Days to subtract from minimum x limit
     add_phase        : Days to add to maximum x limit
@@ -355,6 +357,9 @@ def plot_lightcurve(sub_y, sub_x, sub_n, output_table, first_mjd, bright_mjd, re
 
         plt.plot(model_time, model_red    , color = 'r', linestyle = ':', linewidth = 0.5)
         plt.plot(model_time, model_green  , color = 'g', linestyle = ':', linewidth = 0.5)
+        if np.isfinite(chi2):
+            plt.plot([]        , []           , color = 'k', linestyle = ':', linewidth = 0.5, label = r'$\chi^2 = %s$'%round(chi2, 2))
+            plt.legend(loc = 'upper right')
 
     # Plot comparison TDE, Ia, and SLSN
     if plot_comparison & (full_range == False):
@@ -652,57 +657,72 @@ def plot_host_information(sub_y, sub_x, sub_n, ra_deg, dec_deg, info_table, host
         photoz = photoz_err = '--'
 
     # Classifier Info
-    P_quick_Nuclear         = float(info_table['P_quick_Nuclear'])
-    P_quick_SLSNI           = float(info_table['P_quick_SLSNI'])
-    P_quick_SLSNII          = float(info_table['P_quick_SLSNII'])
-    P_quick_SNII            = float(info_table['P_quick_SNII']) + float(info_table['P_quick_SNIIb']) + float(info_table['P_quick_SNIIn'])
-    P_quick_SNI             = float(info_table['P_quick_SNIa']) + float(info_table['P_quick_SNIbc'])
-    P_quick_Star            = float(info_table['P_quick_Star'])
-    P_quick_Nuclear_std     = float(info_table['P_quick_Nuclear_std'])
-    P_quick_SLSNI_std       = float(info_table['P_quick_SLSNI_std'])
-    P_quick_SLSNII_std      = float(info_table['P_quick_SLSNII_std'])
-    P_quick_SNII_std        = np.sqrt(float(info_table['P_quick_SNII_std']) ** 2 + float(info_table['P_quick_SNIIb_std']) ** 2 + float(info_table['P_quick_SNIIn_std']) ** 2)
-    P_quick_SNI_std         = np.sqrt(float(info_table['P_quick_SNIa_std']) ** 2 + float(info_table['P_quick_SNIbc_std']) ** 2)
-    P_quick_Star_std        = float(info_table['P_quick_Star_std'])
+    try:
+        P_quick_AGN             = float(info_table['P_quick_AGN'])
+        P_quick_SLSNI           = float(info_table['P_quick_SLSNI'])
+        P_quick_SLSNII          = float(info_table['P_quick_SLSNII'])
+        P_quick_SNII            = float(info_table['P_quick_SNII']) + float(info_table['P_quick_SNIIb']) + float(info_table['P_quick_SNIIn'])
+        P_quick_SNI             = float(info_table['P_quick_SNIa']) + float(info_table['P_quick_SNIbc'])
+        P_quick_Star            = float(info_table['P_quick_Star'])
+        P_quick_TDE             = float(info_table['P_quick_TDE'])
+        P_quick_AGN_std         = float(info_table['P_quick_AGN_std'])
+        P_quick_SLSNI_std       = float(info_table['P_quick_SLSNI_std'])
+        P_quick_SLSNII_std      = float(info_table['P_quick_SLSNII_std'])
+        P_quick_SNII_std        = np.sqrt(float(info_table['P_quick_SNII_std']) ** 2 + float(info_table['P_quick_SNIIb_std']) ** 2 + float(info_table['P_quick_SNIIn_std']) ** 2)
+        P_quick_SNI_std         = np.sqrt(float(info_table['P_quick_SNIa_std']) ** 2 + float(info_table['P_quick_SNIbc_std']) ** 2)
+        P_quick_Star_std        = float(info_table['P_quick_Star_std'])
+        P_quick_TDE_std         = float(info_table['P_quick_TDE_std'])
 
-    P_late_Nuclear          = float(info_table['P_late_Nuclear'])
-    P_late_SLSNI            = float(info_table['P_late_SLSNI'])
-    P_late_SLSNII           = float(info_table['P_late_SLSNII'])
-    P_late_SNII             = float(info_table['P_late_SNII']) + float(info_table['P_late_SNIIb']) + float(info_table['P_late_SNIIn'])
-    P_late_SNI              = float(info_table['P_late_SNIa']) + float(info_table['P_late_SNIbc'])
-    P_late_Star             = float(info_table['P_late_Star'])
-    P_late_Nuclear_std      = float(info_table['P_late_Nuclear_std'])
-    P_late_SLSNI_std        = float(info_table['P_late_SLSNI_std'])
-    P_late_SLSNII_std       = float(info_table['P_late_SLSNII_std'])
-    P_late_SNII_std         = np.sqrt(float(info_table['P_late_SNII_std']) ** 2 + float(info_table['P_late_SNIIb_std']) ** 2 + float(info_table['P_late_SNIIn_std']) ** 2)
-    P_late_SNI_std          = np.sqrt(float(info_table['P_late_SNIa_std']) ** 2 + float(info_table['P_late_SNIbc_std']) ** 2)
-    P_late_Star_std         = float(info_table['P_late_Star_std'])
+        P_late_AGN              = float(info_table['P_late_AGN'])
+        P_late_SLSNI            = float(info_table['P_late_SLSNI'])
+        P_late_SLSNII           = float(info_table['P_late_SLSNII'])
+        P_late_SNII             = float(info_table['P_late_SNII']) + float(info_table['P_late_SNIIb']) + float(info_table['P_late_SNIIn'])
+        P_late_SNI              = float(info_table['P_late_SNIa']) + float(info_table['P_late_SNIbc'])
+        P_late_Star             = float(info_table['P_late_Star'])
+        P_late_TDE              = float(info_table['P_late_TDE'])
+        P_late_AGN_std          = float(info_table['P_late_AGN_std'])
+        P_late_SLSNI_std        = float(info_table['P_late_SLSNI_std'])
+        P_late_SLSNII_std       = float(info_table['P_late_SLSNII_std'])
+        P_late_SNII_std         = np.sqrt(float(info_table['P_late_SNII_std']) ** 2 + float(info_table['P_late_SNIIb_std']) ** 2 + float(info_table['P_late_SNIIn_std']) ** 2)
+        P_late_SNI_std          = np.sqrt(float(info_table['P_late_SNIa_std']) ** 2 + float(info_table['P_late_SNIbc_std']) ** 2)
+        P_late_Star_std         = float(info_table['P_late_Star_std'])
+        P_late_TDE_std          = float(info_table['P_late_TDE_std'])
 
-    P_redshift_Nuclear      = float(info_table['P_redshift_Nuclear'])
-    P_redshift_SLSNI        = float(info_table['P_redshift_SLSNI'])
-    P_redshift_SLSNII       = float(info_table['P_redshift_SLSNII'])
-    P_redshift_SNII         = float(info_table['P_redshift_SNII']) + float(info_table['P_redshift_SNIIb']) + float(info_table['P_redshift_SNIIn'])
-    P_redshift_SNI          = float(info_table['P_redshift_SNIa']) + float(info_table['P_redshift_SNIbc'])
-    P_redshift_Star         = float(info_table['P_redshift_Star'])
-    P_redshift_Nuclear_std  = float(info_table['P_redshift_Nuclear_std'])
-    P_redshift_SLSNI_std    = float(info_table['P_redshift_SLSNI_std'])
-    P_redshift_SLSNII_std   = float(info_table['P_redshift_SLSNII_std'])
-    P_redshift_SNII_std     = np.sqrt(float(info_table['P_redshift_SNII_std']) ** 2 + float(info_table['P_redshift_SNIIb_std']) ** 2 + float(info_table['P_redshift_SNIIn_std']) ** 2)
-    P_redshift_SNI_std      = np.sqrt(float(info_table['P_redshift_SNIa_std']) ** 2 + float(info_table['P_redshift_SNIbc_std']) ** 2)
-    P_redshift_Star_std     = float(info_table['P_redshift_Star_std'])
+        P_redshift_AGN          = float(info_table['P_redshift_AGN'])
+        P_redshift_SLSNI        = float(info_table['P_redshift_SLSNI'])
+        P_redshift_SLSNII       = float(info_table['P_redshift_SLSNII'])
+        P_redshift_SNII         = float(info_table['P_redshift_SNII']) + float(info_table['P_redshift_SNIIb']) + float(info_table['P_redshift_SNIIn'])
+        P_redshift_SNI          = float(info_table['P_redshift_SNIa']) + float(info_table['P_redshift_SNIbc'])
+        P_redshift_Star         = float(info_table['P_redshift_Star'])
+        P_redshift_TDE          = float(info_table['P_redshift_TDE'])
+        P_redshift_AGN_std      = float(info_table['P_redshift_AGN_std'])
+        P_redshift_SLSNI_std    = float(info_table['P_redshift_SLSNI_std'])
+        P_redshift_SLSNII_std   = float(info_table['P_redshift_SLSNII_std'])
+        P_redshift_SNII_std     = np.sqrt(float(info_table['P_redshift_SNII_std']) ** 2 + float(info_table['P_redshift_SNIIb_std']) ** 2 + float(info_table['P_redshift_SNIIn_std']) ** 2)
+        P_redshift_SNI_std      = np.sqrt(float(info_table['P_redshift_SNIa_std']) ** 2 + float(info_table['P_redshift_SNIbc_std']) ** 2)
+        P_redshift_Star_std     = float(info_table['P_redshift_Star_std'])
+        P_redshift_TDE_std      = float(info_table['P_redshift_TDE_std'])
 
-    P_host_Nuclear          = float(info_table['P_host_Nuclear'])
-    P_host_SLSNI            = float(info_table['P_host_SLSNI'])
-    P_host_SLSNII           = float(info_table['P_host_SLSNII'])
-    P_host_SNII             = float(info_table['P_host_SNII']) + float(info_table['P_host_SNIIb']) + float(info_table['P_host_SNIIn'])
-    P_host_SNI              = float(info_table['P_host_SNIa']) + float(info_table['P_host_SNIbc'])
-    P_host_Star             = float(info_table['P_host_Star'])
-    P_host_Nuclear_std      = float(info_table['P_host_Nuclear_std'])
-    P_host_SLSNI_std        = float(info_table['P_host_SLSNI_std'])
-    P_host_SLSNII_std       = float(info_table['P_host_SLSNII_std'])
-    P_host_SNII_std         = np.sqrt(float(info_table['P_host_SNII_std']) ** 2 + float(info_table['P_host_SNIIb_std']) ** 2 + float(info_table['P_host_SNIIn_std']) ** 2)
-    P_host_SNI_std          = np.sqrt(float(info_table['P_host_SNIa_std']) ** 2 + float(info_table['P_host_SNIbc_std']) ** 2)
-    P_host_Star_std         = float(info_table['P_host_Star_std'])
+        P_host_AGN              = float(info_table['P_host_AGN'])
+        P_host_SLSNI            = float(info_table['P_host_SLSNI'])
+        P_host_SLSNII           = float(info_table['P_host_SLSNII'])
+        P_host_SNII             = float(info_table['P_host_SNII']) + float(info_table['P_host_SNIIb']) + float(info_table['P_host_SNIIn'])
+        P_host_SNI              = float(info_table['P_host_SNIa']) + float(info_table['P_host_SNIbc'])
+        P_host_Star             = float(info_table['P_host_Star'])
+        P_host_TDE              = float(info_table['P_host_TDE'])
+        P_host_AGN_std          = float(info_table['P_host_AGN_std'])
+        P_host_SLSNI_std        = float(info_table['P_host_SLSNI_std'])
+        P_host_SLSNII_std       = float(info_table['P_host_SLSNII_std'])
+        P_host_SNII_std         = np.sqrt(float(info_table['P_host_SNII_std']) ** 2 + float(info_table['P_host_SNIIb_std']) ** 2 + float(info_table['P_host_SNIIn_std']) ** 2)
+        P_host_SNI_std          = np.sqrt(float(info_table['P_host_SNIa_std']) ** 2 + float(info_table['P_host_SNIbc_std']) ** 2)
+        P_host_Star_std         = float(info_table['P_host_Star_std'])
+        P_host_TDE_std          = float(info_table['P_host_TDE_std'])
+    except:
+        P_quick_AGN=P_quick_SLSNI=P_quick_SLSNII=P_quick_SNII=P_quick_SNI=P_quick_Star=P_quick_TDE=P_quick_AGN_std=P_quick_SLSNI_std=P_quick_SLSNII_std=P_quick_SNII_std=0.0
+        P_quick_SNI_std=P_quick_Star_std=P_quick_TDE_std=P_late_AGN=P_late_SLSNI=P_late_SLSNII=P_late_SNII=P_late_SNI=P_late_Star=P_late_TDE=P_late_AGN_std=P_late_SLSNI_std=0.0
+        P_late_SLSNII_std=P_late_SNII_std=P_late_SNI_std=P_late_Star_std=P_late_TDE_std=P_redshift_AGN=P_redshift_SLSNI=P_redshift_SLSNII=P_redshift_SNII=P_redshift_SNI=P_redshift_Star=0.0
+        P_redshift_TDE=P_redshift_AGN_std=P_redshift_SLSNI_std=P_redshift_SLSNII_std=P_redshift_SNII_std=P_redshift_SNI_std=P_redshift_Star_std=P_redshift_TDE_std=P_host_AGN=P_host_SLSNI=0.0
+        P_host_SLSNII=P_host_SNII=P_host_SNI=P_host_Star=P_host_TDE=P_host_AGN_std=P_host_SLSNI_std=P_host_SLSNII_std=P_host_SNII_std=P_host_SNI_std=P_host_Star_std=P_host_TDE_std=0.0
 
     ############## Generate Legend ##############
 
@@ -737,27 +757,27 @@ def plot_host_information(sub_y, sub_x, sub_n, ra_deg, dec_deg, info_table, host
     if str(absolute_magnitude) not in emptys : legend_name += 'Abs. Mag = %s\n\n'%(round(absolute_magnitude, 2))
 
     # ML Classification
-    legend_name += '           Nuclear  SLSN-I  SLSN-II  SNII  SNI  Star\n'
-    if np.isfinite(P_quick_Nuclear):
-        if np.isfinite(P_quick_Nuclear_std):
-            legend_name += r'early       %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f'%(P_quick_Nuclear,P_quick_Nuclear_std,P_quick_SLSNI,P_quick_SLSNI_std,P_quick_SLSNII,P_quick_SLSNII_std,P_quick_SNII,P_quick_SNII_std,P_quick_SNI,P_quick_SNI_std,P_quick_Star,P_quick_Star_std) + '\n'
+    legend_name += '           AGN  SLSN-I  SLSN-II  SNII  SNI  Star  TDE\n'
+    if np.isfinite(P_quick_AGN):
+        if np.isfinite(P_quick_AGN_std):
+            legend_name += r'early      %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f'%(P_quick_AGN,P_quick_AGN_std,P_quick_SLSNI,P_quick_SLSNI_std,P_quick_SLSNII,P_quick_SLSNII_std,P_quick_SNII,P_quick_SNII_std,P_quick_SNI,P_quick_SNI_std,P_quick_Star,P_quick_Star_std,P_quick_TDE,P_quick_TDE_std) + '\n'
         else:
-            legend_name += r'early       %.0f        %.0f        %.0f        %.0f        %.0f        %.0f     '%(P_quick_Nuclear,P_quick_SLSNI,P_quick_SLSNII,P_quick_SNII,P_quick_SNI,P_quick_Star) + '\n'
-    if np.isfinite(P_late_Nuclear):
-        if np.isfinite(P_late_Nuclear_std):
-            legend_name += r'late        %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f'%(P_late_Nuclear,P_late_Nuclear_std,P_late_SLSNI,P_late_SLSNI_std,P_late_SLSNII,P_late_SLSNII_std,P_late_SNII,P_late_SNII_std,P_late_SNI,P_late_SNI_std,P_late_Star,P_late_Star_std) + '\n'
+            legend_name += r'early      %.0f        %.0f        %.0f        %.0f        %.0f        %.0f        %.0f     '%(P_quick_AGN,P_quick_SLSNI,P_quick_SLSNII,P_quick_SNII,P_quick_SNI,P_quick_Star,P_quick_TDE) + '\n'
+    if np.isfinite(P_late_AGN):
+        if np.isfinite(P_late_AGN_std):
+            legend_name += r'late       %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f'%(P_late_AGN,P_late_AGN_std,P_late_SLSNI,P_late_SLSNI_std,P_late_SLSNII,P_late_SLSNII_std,P_late_SNII,P_late_SNII_std,P_late_SNI,P_late_SNI_std,P_late_Star,P_late_Star_std,P_late_TDE,P_late_TDE_std) + '\n'
         else:
-            legend_name += r'late        %.0f        %.0f        %.0f        %.0f        %.0f        %.0f     '%(P_late_Nuclear,P_late_SLSNI,P_late_SLSNII,P_late_SNII,P_late_SNI,P_late_Star) + '\n'
-    if np.isfinite(P_redshift_Nuclear):
-        if np.isfinite(P_redshift_Nuclear_std):
-            legend_name += r'redshift  %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f'%(P_redshift_Nuclear,P_redshift_Nuclear_std,P_redshift_SLSNI,P_redshift_SLSNI_std,P_redshift_SLSNII,P_redshift_SLSNII_std,P_redshift_SNII,P_redshift_SNII_std,P_redshift_SNI,P_redshift_SNI_std,P_redshift_Star,P_redshift_Star_std) + '\n'
+            legend_name += r'late       %.0f        %.0f        %.0f        %.0f        %.0f        %.0f        %.0f     '%(P_late_AGN,P_late_SLSNI,P_late_SLSNII,P_late_SNII,P_late_SNI,P_late_Star,P_late_TDE) + '\n'
+    if np.isfinite(P_redshift_AGN):
+        if np.isfinite(P_redshift_AGN_std):
+            legend_name += r'redshift %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f'%(P_redshift_AGN,P_redshift_AGN_std,P_redshift_SLSNI,P_redshift_SLSNI_std,P_redshift_SLSNII,P_redshift_SLSNII_std,P_redshift_SNII,P_redshift_SNII_std,P_redshift_SNI,P_redshift_SNI_std,P_redshift_Star,P_redshift_Star_std,P_redshift_TDE,P_redshift_TDE_std) + '\n'
         else:
-            legend_name += r'redshift  %.0f        %.0f        %.0f        %.0f        %.0f        %.0f     '%(P_redshift_Nuclear,P_redshift_SLSNI,P_redshift_SLSNII,P_redshift_SNII,P_redshift_SNI,P_redshift_Star) + '\n'
-    if np.isfinite(P_host_Nuclear):
-        if np.isfinite(P_host_Nuclear_std):
-            legend_name += r'host        %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f'%(P_host_Nuclear,P_host_Nuclear_std,P_host_SLSNI,P_host_SLSNI_std,P_host_SLSNII,P_host_SLSNII_std,P_host_SNII,P_host_SNII_std,P_host_SNI,P_host_SNI_std,P_host_Star,P_host_Star_std)
+            legend_name += r'redshift %.0f        %.0f        %.0f        %.0f        %.0f        %.0f        %.0f     '%(P_redshift_AGN,P_redshift_SLSNI,P_redshift_SLSNII,P_redshift_SNII,P_redshift_SNI,P_redshift_Star,P_redshift_TDE) + '\n'
+    if np.isfinite(P_host_AGN):
+        if np.isfinite(P_host_AGN_std):
+            legend_name += r'host       %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f'%(P_host_AGN,P_host_AGN_std,P_host_SLSNI,P_host_SLSNI_std,P_host_SLSNII,P_host_SLSNII_std,P_host_SNII,P_host_SNII_std,P_host_SNI,P_host_SNI_std,P_host_Star,P_host_Star_std,P_host_TDE,P_host_TDE_std)
         else:
-            legend_name += r'host        %.0f        %.0f        %.0f        %.0f        %.0f        %.0f     '%(P_host_Nuclear,P_host_SLSNI,P_host_SLSNII,P_host_SNII,P_host_SNI,P_host_Star)
+            legend_name += r'host       %.0f        %.0f        %.0f        %.0f        %.0f        %.0f        %.0f     '%(P_host_AGN,P_host_SLSNI,P_host_SLSNII,P_host_SNII,P_host_SNI,P_host_Star,P_host_TDE)
 
     plt.tick_params(axis='both', left=False, top=False, right=False, bottom=False, labelleft=False, labeltop=False, labelright=False, labelbottom=False)
     plt.annotate(legend_name, xy = (0.02, 0.96), fontsize = 10, va = 'top')
@@ -1121,7 +1141,7 @@ def plot_coordinates(sub_y, sub_x, sub_n, ra_deg, dec_deg, data_catalog, closest
     plt.xlabel('RA [arcsec]')
     plt.ylabel('DEC [arcsec]')
 
-def make_plot(object_name, ra_deg, dec_deg, output_table, data_catalog, info_table, best_host, host_radius, host_separation, host_ra, host_dec, host_Pcc, host_magnitude, host_nature, first_mjd, bright_mjd, search_radius, star_cut, Dates_MMT, Airmass_MMT, SunElevation_MMT, Dates_Magellan, Airmass_Magellan, SunElevation_Magellan, red_amplitude = np.nan, red_amplitude2 = np.nan, red_offset = np.nan, red_magnitude = np.nan, green_amplitude = np.nan, green_amplitude2 = np.nan, green_offset = np.nan, green_magnitude = np.nan, g_correct = 0, r_correct = 0):
+def make_plot(object_name, ra_deg, dec_deg, output_table, data_catalog, info_table, best_host, host_radius, host_separation, host_ra, host_dec, host_Pcc, host_magnitude, host_nature, first_mjd, bright_mjd, search_radius, star_cut, Dates_MMT, Airmass_MMT, SunElevation_MMT, Dates_Magellan, Airmass_Magellan, SunElevation_Magellan, red_amplitude = np.nan, red_amplitude2 = np.nan, red_offset = np.nan, red_magnitude = np.nan, green_amplitude = np.nan, green_amplitude2 = np.nan, green_offset = np.nan, green_magnitude = np.nan, chi2 = np.nan, g_correct = 0, r_correct = 0):
     '''
     Create a diagnosis plot with the light curve and field image of a transient
 
@@ -1157,6 +1177,7 @@ def make_plot(object_name, ra_deg, dec_deg, output_table, data_catalog, info_tab
     green_amplitude2      : 
     green_offset          : 
     green_magnitude       : 
+    chi2                  : 
     g_correct             : extinction value in g band
     r_correct             : extinction value in r band
 
@@ -1207,7 +1228,7 @@ def make_plot(object_name, ra_deg, dec_deg, output_table, data_catalog, info_tab
     plot_ra_dec_size        (3, 4,  5, objects_ra, objects_dec, ra_deg, dec_deg, output_nature, host_ra, host_dec, search_radius, halflight_radius, transient_magnitude)
     plot_ra_dec_magnitude   (3, 4,  6, objects_ra, objects_dec, ra_deg, dec_deg, hosts_magnitudes, host_ra, host_dec, search_radius, transient_magnitude)
     plot_field_image        (3, 4,  7, ra_deg, dec_deg, object_name, search_radius = search_radius)
-    used_colors, used_sources = plot_lightcurve(3,4,8, output_table_correct, first_mjd, bright_mjd, red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, full_range = False)
+    used_colors, used_sources = plot_lightcurve(3,4,8, output_table_correct, first_mjd, bright_mjd, red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, chi2, full_range = False)
     plot_blackbody          (3, 4,  9, data_catalog, best_host)
     plot_coordinates        (3, 4, 10, ra_deg,dec_deg, data_catalog, closest)
     plot_legend             (3, 4, 11, used_colors, used_sources)

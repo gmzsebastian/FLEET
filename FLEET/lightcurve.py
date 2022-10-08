@@ -76,7 +76,32 @@ def lnprob_single(theta, x, y, z):
         return -np.inf
     return lp + lnlike_single(theta, x, y, z)
 
-def fit_linex(output_table, date_range = np.inf, n_walkers = 50, n_steps = 500, n_cores = 1, model = 'double', g_correct = 0, r_correct = 0):
+# Function for finding reduced chi squared
+def calc_chi2(ydata, ymod, n_parameters, sigma):
+    '''
+    Calculate the reduced chi squared of a data set and a model while fitting
+    some number of parameters.
+
+    Parameters
+    ----------
+    ydata: real data values.
+    ymod:  values of the model, array must be same size as ydata.
+    n_parameters: Number of parameters being fit for.
+    sigma: uncertainties of the y data
+
+    Returns
+    -------
+    number: reduced chi squared value.
+    '''
+    sigma[sigma <= 0] = np.nan
+    chisq = np.nansum(((ydata-ymod)/sigma)**2.0)
+    nu = ydata.size-n_parameters-1.0
+    if nu > 0:
+        return chisq / nu
+    else:
+        return chisq
+
+def fit_linex(output_table, date_range = np.inf, n_walkers = 50, n_steps = 500, n_cores = 1, model = 'double', g_correct = 0, r_correct = 0, late_phase = 40):
     '''
     Use emcee to fit an exponential function to the green and red light curves
     of a transient.
@@ -92,6 +117,7 @@ def fit_linex(output_table, date_range = np.inf, n_walkers = 50, n_steps = 500, 
                     'single' will just fit a single exponential
     g_correct     : extinction value in g band
     r_correct     : extinction value in r band
+    late_phase    : Phase at which to calculate the late color
 
     Output
     ---------------
@@ -102,6 +128,7 @@ def fit_linex(output_table, date_range = np.inf, n_walkers = 50, n_steps = 500, 
     first_mjd       : First MJD in either g or r
     green_brightest : Brightest measured g-band magnitude
     red_brightest   : Brightest measured r-band magnitude
+    chi2            : Chi squared value
     '''
 
     flot = lambda x : np.array(x).astype(float)
@@ -229,12 +256,23 @@ def fit_linex(output_table, date_range = np.inf, n_walkers = 50, n_steps = 500, 
             # Get color at brightest point
             brightest_phase = np.append(r_phase[good_r], g_phase[good_g])[np.argmin(np.append(r_mag[good_r], g_mag[good_g]))]
             model_color     = linex(brightest_phase, green_amplitude, green_amplitude2, green_offset, green_magnitude)-linex(brightest_phase, red_amplitude, red_amplitude2, red_offset, red_magnitude)
+            late_color      = linex(brightest_phase+late_phase, green_amplitude, green_amplitude2, green_offset, green_magnitude)-linex(brightest_phase+late_phase, red_amplitude, red_amplitude2, red_offset, red_magnitude)
 
-            return red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, model_color, bright_mjd, first_mjd, green_brightest, red_brightest
+            # Calculate chi squared
+            model_r = linex(x_r,   red_amplitude,   red_amplitude2,   red_offset,   red_magnitude)
+            model_g = linex(x_g, green_amplitude, green_amplitude2, green_offset, green_magnitude)
+            # Append green and red bands
+            ydata = np.append(y_r, y_g)
+            ymod  = np.append(model_r, model_g)
+            sigma = np.append(z_r, z_g)
+            # Calcualte chi squared
+            chi2 = calc_chi2(ydata, ymod, 4, sigma)
+
+            return red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, model_color, late_color, bright_mjd, first_mjd, green_brightest, red_brightest, chi2
 
         else:
             print('Not enough g and r band points inside given range \n')
-            return np.nan * np.ones(13)
+            return np.nan * np.ones(15)
     else:
         print('Not enough g and r band points \n')
-        return np.nan * np.ones(13)
+        return np.nan * np.ones(15)

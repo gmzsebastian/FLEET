@@ -20,7 +20,7 @@ setup(name='fleet-pipe',
       packages=['FLEET'],
       package_data={'FLEET': ['training_set/*.txt', 'classification_catalog.dat']},
       include_package_data=True,
-      cmdclass={'install': InstallAndFetchDustMaps},
+      #cmdclass={'install': InstallAndFetchDustMaps},
       install_requires=[
         'numpy',
         'astroquery',

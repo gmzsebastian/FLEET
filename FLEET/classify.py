@@ -10,7 +10,7 @@ import numpy as np
 import glob
 import os
 
-def create_features(object_name, red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, model_color, bright_mjd, first_mjd, green_brightest, red_brightest, host_radius, host_separation, host_Pcc, host_magnitude, hostless_cut = 0.1, redshift = np.nan):
+def create_features(object_name, red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, model_color, late_color, bright_mjd, first_mjd, green_brightest, red_brightest, host_radius, host_separation, host_Pcc, host_magnitude, chi2, hostless_cut = 0.1, redshift = np.nan):
     '''
     Create an astropy table with all the relevant features to feed into the classifier
 
@@ -19,6 +19,7 @@ def create_features(object_name, red_amplitude, red_amplitude2, red_offset, red_
     red_amplitude  , red_amplitude2  , red_offset  , red_magnitude   : Best fit parameters for r-band light curve
     green_amplitude, green_amplitude2, green_offset, green_magnitude : Best fit parameters for g-band light curve
     model_color     : g-r color from the model light curves at the time of brightest measured magnitude
+    late_color      : g-r color at late_phase (40 default) days after peak
     bright_mjd      : Brightest MJD in either g or r
     first_mjd       : First MJD in either g or r
     green_brightest : Brightest measured g-band magnitude
@@ -30,6 +31,7 @@ def create_features(object_name, red_amplitude, red_amplitude2, red_offset, red_
     host_separation : The transient-host separation in arcsec
     host_Pcc        : The probability of chance coincidence for the best host
     host_magnitude  : The magnitude of the best host
+    chi2            : Chi squared value
 
     Return
     ---------------
@@ -63,9 +65,9 @@ def create_features(object_name, red_amplitude, red_amplitude2, red_offset, red_
     else:
         absmag = np.nan
 
-    features       = np.array(                     [object_name  , red_amplitude  , red_amplitude2  , red_offset  , red_magnitude  , green_amplitude  , green_amplitude2  , green_offset  , green_magnitude  , delta_time  , input_separation  , input_size  ,  normal_separation   , deltamag_red   , deltamag_green, model_color   , host_Pcc   , redshift   , absmag])
-    features_table = table.Table(features, names = ['object_name', 'red_amplitude', 'red_amplitude2', 'red_offset', 'red_magnitude', 'green_amplitude', 'green_amplitude2', 'green_offset', 'green_magnitude', 'delta_time', 'input_separation', 'input_size',  'normal_separation', 'deltamag_red', 'deltamag_green',  'model_color', 'Pcc'    , 'redshift',  'absmag'],
-                                           dtype = ['S25'        , 'float64'      ,        'float64',    'float64',       'float64',         'float64',          'float64',      'float64',         'float64',    'float64',          'float64',    'float64',            'float64',      'float64',        'float64',      'float64', 'float64',  'float64', 'float64'])
+    features       = np.array(                     [object_name  , red_amplitude  , red_amplitude2  , red_offset  , red_magnitude  , green_amplitude  , green_amplitude2  , green_offset  , green_magnitude  , delta_time  , input_separation  , input_size  ,  normal_separation  , deltamag_red  ,  deltamag_green   , model_color ,  late_color , host_Pcc ,   redshift,   absmag ,     chi2 ])
+    features_table = table.Table(features, names = ['object_name', 'red_amplitude', 'red_amplitude2', 'red_offset', 'red_magnitude', 'green_amplitude', 'green_amplitude2', 'green_offset', 'green_magnitude', 'delta_time', 'input_separation', 'input_size',  'normal_separation', 'deltamag_red', 'deltamag_green',  'model_color', 'late_color', 'Pcc'    , 'redshift',  'absmag',    'chi2'],
+                                           dtype = ['S25'        , 'float64'      ,        'float64',    'float64',       'float64',         'float64',          'float64',      'float64',         'float64',    'float64',          'float64',    'float64',            'float64',      'float64',        'float64',      'float64',    'float64', 'float64',  'float64', 'float64', 'float64'])
 
     return features_table
 
@@ -91,7 +93,7 @@ def create_training_testing(object_name, features_table, training_days = 20, mod
 
     Return
     ---------------
-    Predicted Probability to be ['Nuclear','SLSN-I','SLSN-II','SNII','SNIIb','SNIIn','SNIa','SNIbc','Star']
+    Predicted Probability to be ['AGN','SLSN-I','SLSN-II','SNII','SNIIb','SNIIn','SNIa','SNIbc','Star','TDE']
     '''
 
     # Import Data
@@ -105,7 +107,7 @@ def create_training_testing(object_name, features_table, training_days = 20, mod
            '2018imj','2018lcd','2019B'  ,'2019bvq','2019cda','2019ci' ,'2019dok','2019gaf',
            '2019gqk','2019hau','2019iex','2019keo','2019lkw','2019oa' ,'2019otb','2019pjs',
            '2019sjx','2019tqb','2019wbg','2020ekk', object_name]
-    good = [i not in bad for i in training_table_in['mod_object_name']]
+    good = [i not in bad for i in training_table_in['object_name']]
     training_table_in = training_table_in[good]
 
     # Shuffle Order of Table
@@ -121,23 +123,33 @@ def create_training_testing(object_name, features_table, training_days = 20, mod
         clean_training = training_table[np.isfinite(training_table['red_amplitude']) & np.isfinite(training_table['Pcc']) & (training_table['Pcc'] <= hostless_cut)]
 
     # Select Features
-    if feature_set == 0 :  use_features = ['red_amplitude',                   'green_amplitude',                                      'normal_separation' , 'deltamag_red', 'deltamag_green'                            ]
-    if feature_set == 1 :  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation' , 'deltamag_red', 'deltamag_green'                            ]
-    if feature_set == 2 :  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   ,                       'deltamag_red', 'deltamag_green'                            ]
-    if feature_set == 3 :  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation'                                                               ]
-    if feature_set == 4 :  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   ,                                                                                   ]
-    if feature_set == 5 :  use_features = ['red_amplitude',                   'green_amplitude',                                                                                                                        ]
-    if feature_set == 6 :  use_features = [                                                                                           'normal_separation' , 'deltamag_red', 'deltamag_green'                            ]
-    if feature_set == 7 :  use_features = ['red_amplitude',                   'green_amplitude',                                      'normal_separation'                                                               ]
-    if feature_set == 8 :  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation'                                    , 'color'                  ]
-    if feature_set == 9 :  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation' , 'deltamag_red', 'deltamag_green' , 'color'                  ]
-    if feature_set == 10:  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation'                                                   , 'Pcc'     ]
-    if feature_set == 11:  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation'                                                   , 'redshift']
-    if feature_set == 12:  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation'                                                   , 'absmag'  ]
-    if feature_set == 13:  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation'                                    , 'model_color'            ]
-    if feature_set == 14:  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation' , 'deltamag_red', 'deltamag_green' , 'model_color'            ]
-    if feature_set == 15:  use_features = ['red_amplitude',                   'green_amplitude',                                      'normal_separation' , 'deltamag_red', 'deltamag_green' , 'model_color'            ]
-    if feature_set == 16:  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation'                                    , 'model_color', 'redshift']
+    if feature_set == 0 :  use_features = ['red_amplitude',                   'green_amplitude',                                      'normal_separation' , 'deltamag_red', 'deltamag_green'                              ]
+    if feature_set == 1 :  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation' , 'deltamag_red', 'deltamag_green'                              ]
+    if feature_set == 2 :  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   ,                       'deltamag_red', 'deltamag_green'                              ]
+    if feature_set == 3 :  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation'                                                                 ]
+    if feature_set == 4 :  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   ,                                                                                     ]
+    if feature_set == 5 :  use_features = ['red_amplitude',                   'green_amplitude',                                                                                                                          ]
+    if feature_set == 6 :  use_features = [                                                                                           'normal_separation' , 'deltamag_red', 'deltamag_green'                              ]
+    if feature_set == 7 :  use_features = ['red_amplitude',                   'green_amplitude',                                      'normal_separation'                                                                 ]
+    if feature_set == 8 :  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation'                                    , 'color'                    ]
+    if feature_set == 9 :  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation' , 'deltamag_red', 'deltamag_green' , 'color'                    ]
+    if feature_set == 10:  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation'                                                   , 'Pcc'       ]
+    if feature_set == 11:  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation'                                                   , 'redshift'  ]
+    if feature_set == 12:  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation'                                                   , 'absmag'    ]
+    if feature_set == 13:  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation'                                    , 'model_color'              ]
+    if feature_set == 14:  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation' , 'deltamag_red', 'deltamag_green' , 'model_color'              ]
+    if feature_set == 15:  use_features = ['red_amplitude',                   'green_amplitude',                                      'normal_separation' , 'deltamag_red', 'deltamag_green' , 'model_color'              ]
+    if feature_set == 16:  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation'                                    , 'model_color', 'redshift'  ]
+    if feature_set == 17:  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation' , 'deltamag_red', 'deltamag_green'                , 'redshift'  ]
+    if feature_set == 18:  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'input_separation'  , 'deltamag_red', 'deltamag_green'                , 'input_size']
+    if feature_set == 19:  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'input_separation'  , 'deltamag_red', 'deltamag_green' , 'model_color', 'input_size']
+    if feature_set == 20:  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'input_separation'  , 'deltamag_red', 'deltamag_green'                , 'input_size']
+    if feature_set == 21:  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'input_separation'  , 'deltamag_red', 'deltamag_green' , 'model_color', 'input_size']
+    if feature_set == 22:  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation' , 'deltamag_red', 'deltamag_green' , 'model_color', 'redshift'  ]
+    if feature_set == 23:  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation' , 'deltamag_red', 'deltamag_green' , 'model_color'              , 'chi2']
+    if feature_set == 24:  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation' , 'deltamag_red', 'deltamag_green' , 'model_color', 'redshift'  , 'chi2']
+    if feature_set == 25:  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation' , 'deltamag_red', 'deltamag_green' , 'model_color'              , 'late_color']
+    if feature_set == 26:  use_features = ['red_amplitude',                   'green_amplitude',                     'delta_time'   , 'normal_separation' , 'deltamag_red', 'deltamag_green' , 'model_color', 'redshift'  , 'late_color']
 
     # If using the 'double' model, add the W2 parameter
     if model == 'double':
@@ -164,11 +176,8 @@ def create_training_testing(object_name, features_table, training_days = 20, mod
     training_class_in[np.where(training_class_in == 'SNII'   )] = 'SNII'
     training_class_in[np.where(training_class_in == 'SNIIP'  )] = 'SNII'
 
-    training_class_in[np.where(training_class_in == 'TDE'    )] = 'Nuclear'
-    training_class_in[np.where(training_class_in == 'AGN'    )] = 'Nuclear'
-
-    classes_names = {'Nuclear' : 0, 'SLSN-I' : 1, 'SLSN-II' : 2, 'SNII'    : 3, 'SNIIb'   : 4,
-                     'SNIIn'   : 5, 'SNIa'   : 6, 'SNIbc'   : 7, 'Star' : 8}
+    classes_names = {'AGN'     : 0, 'SLSN-I' : 1, 'SLSN-II' : 2, 'SNII'    : 3, 'SNIIb'   : 4,
+                     'SNIIn'   : 5, 'SNIa'   : 6, 'SNIbc'   : 7, 'Star'    : 8, 'TDE'     : 9}
     training_class = np.array([classes_names[i] for i in training_class_in]).astype(int)
 
     # SMOTE the data
@@ -184,7 +193,7 @@ def create_training_testing(object_name, features_table, training_days = 20, mod
 
     return predicted_probability
 
-def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan, acceptance_radius = 3, import_ZTF = True, import_OSC = True, import_local = True, import_lightcurve = True, reimport_catalog = False, search_radius = 1.0, dust_map = 'SFD', Pcc_filter = 'i', Pcc_filter_alternative = 'r', star_separation = 1, star_cut = 0.1, date_range = np.inf, n_walkers = 50, n_steps = 500, n_cores = 1, model = 'single', training_days = 20, hostless_cut = 0.1, sorting_state = 42, clean = 0, SMOTE_state = 42, clf_state = 42, n_estimators = 100, max_depth = 7, feature_set = 13, neighbors = 20, recalculate_nature = False, classifier = '', n_samples = 3, object_class = '', plot_lightcurve = False, do_observability = False, save_features = False, overwrite_features = False):
+def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan, acceptance_radius = 3, import_ZTF = True, import_OSC = True, import_local = True, import_lightcurve = True, reimport_catalog = False, search_radius = 1.0, dust_map = 'SFD', Pcc_filter = 'i', Pcc_filter_alternative = 'r', star_separation = 1, star_cut = 0.1, date_range = np.inf, late_phase = 40, n_walkers = 50, n_steps = 500, n_cores = 1, model = 'single', training_days = 20, hostless_cut = 0.1, sorting_state = 42, clean = 0, SMOTE_state = 42, clf_state = 42, n_estimators = 100, max_depth = 7, feature_set = 13, neighbors = 20, recalculate_nature = False, classifier = '', n_samples = 3, object_class = '', plot_lightcurve = False, do_observability = False, save_features = False, overwrite_features = False):
     '''
     Main Function to predict the probability of an object to be a Superluminous Supernovae
     using the training set provided and a random forest algorithim. The function will query
@@ -216,6 +225,7 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
     star_cut                : maximum allowed probability of an object to be a star
     date_range              : Maximum number of light curve days from the first 
                               detection to use in fitting the light curve
+    late_phase              : Phase at which to calculate the late color
     n_walkers               : Number of walkers for MCMC
     n_steps                 : Number of steps for MCMC
     n_cores                 : Number of cores for MCMC
@@ -245,7 +255,7 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
 
     Returns
     ---------------
-    Predicted Probability to be ['Nuclear','SLSN-I','SLSN-II','SNII','SNIIb','SNIIn','SNIa','SNIbc','Star']
+    Predicted Probability to be ['AGN','SLSN-I','SLSN-II','SNII','SNIIb','SNIIn','SNIa','SNIbc','Star','TDE']
 
     '''
     print('\n################# FLEET #################')
@@ -253,9 +263,9 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
     # Empty Features for if search failed
     if save_features:
         filename   = '%s_%s/center_table_%s_%s_%s.txt'%(int(float(date_range)), model, int(float(date_range)), model, object_name_in)
-    features       = np.array(                     [object_name_in,          np.nan,           np.nan,       np.nan,          np.nan,            np.nan,             np.nan,         np.nan,            np.nan,       np.nan,             np.nan,       np.nan,               np.nan,         np.nan,           np.nan,         np.nan,    np.nan,     np.nan,    np.nan])
-    features_table = table.Table(features, names = ['object_name' , 'red_amplitude', 'red_amplitude2', 'red_offset', 'red_magnitude', 'green_amplitude', 'green_amplitude2', 'green_offset', 'green_magnitude', 'delta_time', 'input_separation', 'input_size',  'normal_separation', 'deltamag_red', 'deltamag_green',  'model_color',     'Pcc', 'redshift',  'absmag'],
-                                           dtype = ['S25'         , 'float64'      ,        'float64',    'float64',       'float64',         'float64',          'float64',      'float64',         'float64',    'float64',          'float64',    'float64',            'float64',      'float64',        'float64',      'float64', 'float64',  'float64', 'float64'])
+    features       = np.array(                     [object_name_in,          np.nan,           np.nan,       np.nan,          np.nan,            np.nan,             np.nan,         np.nan,            np.nan,       np.nan,             np.nan,       np.nan,               np.nan,         np.nan,           np.nan,         np.nan,        np.nan,    np.nan,     np.nan,    np.nan,    np.nan])
+    features_table = table.Table(features, names = ['object_name' , 'red_amplitude', 'red_amplitude2', 'red_offset', 'red_magnitude', 'green_amplitude', 'green_amplitude2', 'green_offset', 'green_magnitude', 'delta_time', 'input_separation', 'input_size',  'normal_separation', 'deltamag_red', 'deltamag_green',  'model_color',  'late_color',     'Pcc', 'redshift',  'absmag',    'chi2'],
+                                           dtype = ['S25'         , 'float64'      ,        'float64',    'float64',       'float64',         'float64',          'float64',      'float64',         'float64',    'float64',          'float64',    'float64',            'float64',      'float64',        'float64',      'float64',     'float64', 'float64',  'float64', 'float64', 'float64'])
 
     # If the features file already exists, don't overwrite it
     if save_features:
@@ -291,7 +301,7 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
     g_correct, r_correct = get_extinction(ra_deg, dec_deg, dust_map)
 
     ##### Fit Lightcurve #####
-    red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, model_color, bright_mjd, first_mjd, green_brightest, red_brightest = fit_linex(output_table, date_range, n_walkers, n_steps, n_cores, model, g_correct, r_correct)
+    red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, model_color, late_color, bright_mjd, first_mjd, green_brightest, red_brightest, chi2 = fit_linex(output_table, date_range, n_walkers, n_steps, n_cores, model, g_correct, r_correct, late_phase)
     if np.isnan(red_amplitude):
         if plot_lightcurve:
             first_mjd  = np.nanmin(np.array(output_table['MJD']).astype(float))
@@ -310,6 +320,7 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
             return table.Table()
 
     ##### Catalog Operations #####
+    print('Creating Catalog ...')
     data_catalog = catalog_operations(object_name, data_catalog_out, ra_deg, dec_deg, Pcc_filter, Pcc_filter_alternative, neighbors, recalculate_nature)
 
     ##### Find the Best host #####
@@ -334,7 +345,7 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
         redshift_label = 'none'
 
     ##### Get Features #####
-    features_table = create_features(object_name, red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, model_color, bright_mjd, first_mjd, green_brightest, red_brightest, host_radius, host_separation, host_Pcc, host_magnitude, hostless_cut, use_redshift)
+    features_table = create_features(object_name, red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, model_color, late_color, bright_mjd, first_mjd, green_brightest, red_brightest, host_radius, host_separation, host_Pcc, host_magnitude, chi2, hostless_cut, use_redshift)
 
     ##### Save Features for training #####
     if save_features:
@@ -357,23 +368,75 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
     host_probability_average     = np.nan * np.ones(9)
     host_probability_std         = np.nan * np.ones(9)
 
+    # Classifier Parameters
+    if (classifier == '') or ('slsn' in classifier):
+        training_days_quick    = 20
+        model_quick            = 'single'
+        clean_quick            = 0
+        feature_set_quick      = 14
+        max_depth_quick        = 11
+
+        training_days_late     = 70
+        model_late             = 'double'
+        clean_late             = 0
+        feature_set_late       = 14
+        max_depth_late         = 11
+
+        training_days_redshift = 20
+        model_redshift         = 'single'
+        clean_redshift         = 0
+        feature_set_redshift   = 22
+        max_depth_redshift     = 11
+
+        training_days_host     = 70
+        model_host             = 'double'
+        clean_host             = 1
+        feature_set_host       = 14
+        max_depth_host         = 11
+
+    elif ('tde' in classifier):
+        training_days_quick    = 20
+        model_quick            = 'single'
+        clean_quick            = 0
+        feature_set_quick      = 14
+        max_depth_quick        = 14
+
+        training_days_late     = 40
+        model_late             = 'double'
+        clean_late             = 0
+        feature_set_late       = 14
+        max_depth_late         = 14
+
+        training_days_redshift = 20
+        model_redshift         = 'single'
+        clean_redshift         = 0
+        feature_set_redshift   = 22
+        max_depth_redshift     = 14
+
+        training_days_host     = 40
+        model_host             = 'double'
+        clean_host             = 1
+        feature_set_host       = 14
+        max_depth_host         = 14
+
     ##### Run Classifier #####
+    print('Classifying ...')
     if classifier == '':
         quick_probability_average    = create_training_testing(object_name, features_table, training_days, model, clean, feature_set, sorting_state, SMOTE_state, clf_state, n_estimators, max_depth, hostless_cut)[0]
-    elif classifier == 'quick':
-        quick_probability_average    = create_training_testing(object_name, features_table, training_days = 20, model = 'single', clean = 0, feature_set = 13, max_depth = 7)[0]
-    elif classifier == 'late':
-        late_probability_average     = create_training_testing(object_name, features_table, training_days = 70, model = 'double', clean = 0, feature_set = 7 , max_depth = 9)[0]
-    elif classifier == 'redshift':
-        redshift_probability_average = create_training_testing(object_name, features_table, training_days = 20, model = 'single', clean = 0, feature_set = 16, max_depth = 7)[0]
-    elif classifier == 'host':
-        host_probability_average     = create_training_testing(object_name, features_table, training_days = 70, model = 'double', clean = 1, feature_set = 7 , max_depth = 9)[0]
+    elif ('quick' in classifier):
+        quick_probability_average    = create_training_testing(object_name, features_table, training_days = training_days_quick, model = model_quick, clean = clean_quick, feature_set = feature_set_quick, max_depth = max_depth_quick)[0]
+    elif ('late' in classifier):
+        late_probability_average     = create_training_testing(object_name, features_table, training_days = training_days_late, model = model_late, clean = clean_late, feature_set = feature_set_late, max_depth = max_depth_late)[0]
+    elif ('redshift' in classifier):
+        redshift_probability_average = create_training_testing(object_name, features_table, training_days = training_days_redshift, model = model_redshift, clean = clean_redshift, feature_set = feature_set_redshift, max_depth = max_depth_redshift)[0]
+    elif ('host' in classifier):
+        host_probability_average     = create_training_testing(object_name, features_table, training_days = training_days_host, model = model_host, clean = clean_host, feature_set = feature_set_host, max_depth = max_depth_host)[0]
 
-    ##### All in one classifier #####
-    elif classifier == 'all':
+    ##### All in one classifier for SLSN #####
+    elif 'all' in classifier:
         # Quick Classifier
         for i in range(n_samples):
-            quick_probability_n = create_training_testing(object_name, features_table, training_days = 20, model = 'single', clean = 0, feature_set = 13, max_depth = 7, clf_state = int(39 + i))
+            quick_probability_n = create_training_testing(object_name, features_table, training_days = training_days_quick, model = model_quick, clean = clean_quick, feature_set = feature_set_quick, max_depth = max_depth_quick, clf_state = int(39 + i))
             if i == 0:
                 quick_probability = quick_probability_n
             else:
@@ -383,7 +446,7 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
 
         # Late Classifier
         for i in range(n_samples):
-            late_probability_n = create_training_testing(object_name, features_table, training_days = 70, model = 'double', clean = 0, feature_set = 7, max_depth = 9, clf_state = int(39 + i))
+            late_probability_n = create_training_testing(object_name, features_table, training_days = training_days_late, model = model_late, clean = clean_late, feature_set = feature_set_late, max_depth = max_depth_late, clf_state = int(39 + i))
             if i == 0:
                 late_probability = late_probability_n
             else:
@@ -394,7 +457,7 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
         # Redsfhit Classifier
         if np.isfinite(np.float(use_redshift)) & (host_Pcc <= hostless_cut):
             for i in range(n_samples):
-                redshift_probability_n = create_training_testing(object_name, features_table, training_days = 20, model = 'single', clean = 0, feature_set = 16, max_depth = 7, clf_state = int(39 + i))
+                redshift_probability_n = create_training_testing(object_name, features_table, training_days = training_days_redshift, model = model_redshift, clean = clean_redshift, feature_set = feature_set_redshift, max_depth = max_depth_redshift, clf_state = int(39 + i))
                 if i == 0:
                     redshift_probability = redshift_probability_n
                 else:
@@ -408,7 +471,7 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
         # Host Classifier
         if (host_Pcc <= hostless_cut):
             for i in range(n_samples):
-                host_probability_n = create_training_testing(object_name, features_table, training_days = 70, model = 'double', clean = 1, feature_set = 7, max_depth = 9, clf_state = int(39 + i))
+                host_probability_n = create_training_testing(object_name, features_table, training_days = training_days_host, model = model_host, clean = clean_host, feature_set = feature_set_host, max_depth = max_depth_host, clf_state = int(39 + i))
                 if i == 0:
                     host_probability = host_probability_n
                 else:
@@ -426,20 +489,130 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
     Dates_MMT, Airmass_MMT, SunElevation_MMT, Dates_Magellan, Airmass_Magellan, SunElevation_Magellan, MMT_observable, Magellan_observable = calculate_observability(ra_deg, dec_deg, do_observability)
 
     # Output Array
-    info_data  = np.array([object_name, ztf_name, tns_name, object_class, ra_deg, dec_deg, host_radius, host_separation, host_ra, host_dec, host_Pcc, host_magnitude, host_nature, photoz, photoz_err, specz, specz_err, use_redshift, redshift_label, classifier, time_span, MMT_observable, Magellan_observable, *quick_probability_average, *quick_probability_std, *late_probability_average, *late_probability_std, *redshift_probability_average, *redshift_probability_std, *host_probability_average, *host_probability_std])
-    info_names = ['object_name'           ,'ztf_name'             ,'tns_name'             ,'object_class'         ,'ra_deg'               ,'dec_deg'              ,'host_radius'          ,'host_separation'      ,'host_ra'              ,'host_dec'             ,'host_Pcc'             ,'host_magnitude',
-                  'host_nature'           ,'photoz'               ,'photoz_err'           ,'specz'                ,'specz_err'            ,'use_redshift'         ,'redshift_label'       ,'classifier'           ,'time_span', 'MMT_observable', 'Magellan_observable',
-                  'P_quick_Nuclear'       ,'P_quick_SLSNI'        ,'P_quick_SLSNII'       ,'P_quick_SNII'         ,'P_quick_SNIIb'        ,'P_quick_SNIIn'        ,'P_quick_SNIa'         ,'P_quick_SNIbc'        ,'P_quick_Star',
-                  'P_quick_Nuclear_std'   ,'P_quick_SLSNI_std'    ,'P_quick_SLSNII_std'   ,'P_quick_SNII_std'     ,'P_quick_SNIIb_std'    ,'P_quick_SNIIn_std'    ,'P_quick_SNIa_std'     ,'P_quick_SNIbc_std'    ,'P_quick_Star_std',
-                  'P_late_Nuclear'        ,'P_late_SLSNI'         ,'P_late_SLSNII'        ,'P_late_SNII'          ,'P_late_SNIIb'         ,'P_late_SNIIn'         ,'P_late_SNIa'          ,'P_late_SNIbc'         ,'P_late_Star',
-                  'P_late_Nuclear_std'    ,'P_late_SLSNI_std'     ,'P_late_SLSNII_std'    ,'P_late_SNII_std'      ,'P_late_SNIIb_std'     ,'P_late_SNIIn_std'     ,'P_late_SNIa_std'      ,'P_late_SNIbc_std'     ,'P_late_Star_std',
-                  'P_redshift_Nuclear'    ,'P_redshift_SLSNI'     ,'P_redshift_SLSNII'    ,'P_redshift_SNII'      ,'P_redshift_SNIIb'     ,'P_redshift_SNIIn'     ,'P_redshift_SNIa'      ,'P_redshift_SNIbc'     ,'P_redshift_Star',
-                  'P_redshift_Nuclear_std','P_redshift_SLSNI_std' ,'P_redshift_SLSNII_std','P_redshift_SNII_std'  ,'P_redshift_SNIIb_std' ,'P_redshift_SNIIn_std' ,'P_redshift_SNIa_std'  ,'P_redshift_SNIbc_std' ,'P_redshift_Star_std',
-                  'P_host_Nuclear'        ,'P_host_SLSNI'         ,'P_host_SLSNII'        ,'P_host_SNII'          ,'P_host_SNIIb'         ,'P_host_SNIIn'         ,'P_host_SNIa'          ,'P_host_SNIbc'         ,'P_host_Star',
-                  'P_host_Nuclear_std'    ,'P_host_SLSNI_std'     ,'P_host_SLSNII_std'    ,'P_host_SNII_std'      ,'P_host_SNIIb_std'     ,'P_host_SNIIn_std'     ,'P_host_SNIa_std'      ,'P_host_SNIbc_std'     ,'P_host_Star_std']
+    info_data  = np.array([object_name, ztf_name, tns_name, object_class, ra_deg, dec_deg, host_radius, host_separation, host_ra, host_dec, host_Pcc, host_magnitude, host_nature, photoz, photoz_err, specz, specz_err, use_redshift, redshift_label, classifier, time_span, chi2, MMT_observable, Magellan_observable, *quick_probability_average, *quick_probability_std, *late_probability_average, *late_probability_std, *redshift_probability_average, *redshift_probability_std, *host_probability_average, *host_probability_std])
+    info_names = ['object_name'       ,'ztf_name'             ,'tns_name'             ,'object_class'         ,'ra_deg'               ,'dec_deg'              ,'host_radius'          ,'host_separation'      ,'host_ra'              ,'host_dec'          ,'host_Pcc'           ,'host_magnitude',
+                  'host_nature'       ,'photoz'               ,'photoz_err'           ,'specz'                ,'specz_err'            ,'use_redshift'         ,'redshift_label'       ,'classifier'           ,'time_span'            ,'chi2'              ,'MMT_observable'     ,'Magellan_observable',
+                  'P_quick_AGN'       ,'P_quick_SLSNI'        ,'P_quick_SLSNII'       ,'P_quick_SNII'         ,'P_quick_SNIIb'        ,'P_quick_SNIIn'        ,'P_quick_SNIa'         ,'P_quick_SNIbc'        ,'P_quick_Star'         ,'P_quick_TDE'       ,
+                  'P_quick_AGN_std'   ,'P_quick_SLSNI_std'    ,'P_quick_SLSNII_std'   ,'P_quick_SNII_std'     ,'P_quick_SNIIb_std'    ,'P_quick_SNIIn_std'    ,'P_quick_SNIa_std'     ,'P_quick_SNIbc_std'    ,'P_quick_Star_std'     ,'P_quick_TDE_std'   ,
+                  'P_late_AGN'        ,'P_late_SLSNI'         ,'P_late_SLSNII'        ,'P_late_SNII'          ,'P_late_SNIIb'         ,'P_late_SNIIn'         ,'P_late_SNIa'          ,'P_late_SNIbc'         ,'P_late_Star'          ,'P_late_TDE'        ,
+                  'P_late_AGN_std'    ,'P_late_SLSNI_std'     ,'P_late_SLSNII_std'    ,'P_late_SNII_std'      ,'P_late_SNIIb_std'     ,'P_late_SNIIn_std'     ,'P_late_SNIa_std'      ,'P_late_SNIbc_std'     ,'P_late_Star_std'      ,'P_late_TDE_std'    ,
+                  'P_redshift_AGN'    ,'P_redshift_SLSNI'     ,'P_redshift_SLSNII'    ,'P_redshift_SNII'      ,'P_redshift_SNIIb'     ,'P_redshift_SNIIn'     ,'P_redshift_SNIa'      ,'P_redshift_SNIbc'     ,'P_redshift_Star'      ,'P_redshift_TDE'    ,
+                  'P_redshift_AGN_std','P_redshift_SLSNI_std' ,'P_redshift_SLSNII_std','P_redshift_SNII_std'  ,'P_redshift_SNIIb_std' ,'P_redshift_SNIIn_std' ,'P_redshift_SNIa_std'  ,'P_redshift_SNIbc_std' ,'P_redshift_Star_std'  ,'P_redshift_TDE_std',
+                  'P_host_AGN'        ,'P_host_SLSNI'         ,'P_host_SLSNII'        ,'P_host_SNII'          ,'P_host_SNIIb'         ,'P_host_SNIIn'         ,'P_host_SNIa'          ,'P_host_SNIbc'         ,'P_host_Star'          ,'P_host_TDE'        ,
+                  'P_host_AGN_std'    ,'P_host_SLSNI_std'     ,'P_host_SLSNII_std'    ,'P_host_SNII_std'      ,'P_host_SNIIb_std'     ,'P_host_SNIIn_std'     ,'P_host_SNIa_std'      ,'P_host_SNIbc_std'     ,'P_host_Star_std'      ,'P_host_TDE_std'    ]
     info_table = table.Table(info_data, names = info_names)
 
+    print('Plotting ...')
     if plot_lightcurve:
-        make_plot(object_name, ra_deg, dec_deg, output_table, data_catalog, info_table, best_host, host_radius, host_separation, host_ra, host_dec, host_Pcc, host_magnitude, host_nature, first_mjd, bright_mjd, search_radius, star_cut, Dates_MMT, Airmass_MMT, SunElevation_MMT, Dates_Magellan, Airmass_Magellan, SunElevation_Magellan, red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, g_correct, r_correct)
+        make_plot(object_name, ra_deg, dec_deg, output_table, data_catalog, info_table, best_host, host_radius, host_separation, host_ra, host_dec, host_Pcc, host_magnitude, host_nature, first_mjd, bright_mjd, search_radius, star_cut, Dates_MMT, Airmass_MMT, SunElevation_MMT, Dates_Magellan, Airmass_Magellan, SunElevation_Magellan, red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, chi2, g_correct, r_correct)
+    
+    return info_table
+
+def predict_Host(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan, acceptance_radius = 3, import_ZTF = False, import_OSC = False, import_local = False, import_lightcurve = True, reimport_catalog = False,
+                 search_radius = 1.0, dust_map = 'SFD', Pcc_filter = 'i', Pcc_filter_alternative = 'r', star_separation = 1, star_cut = 0.1, hostless_cut = 0.1,
+                 neighbors = 20, recalculate_nature = False, object_class = '', plot_lightcurve = False, do_observability = False):
+    '''
+    Main Function to predict the probability of an object to be a Superluminous Supernovae
+    using the training set provided and a random forest algorithim. The function will query
+    the TNS, ZTF, and the OSC for data for the transient. And SDSS and 3PI for catalog data.
+
+    Parameters
+    -------------
+    object_name_in          : name of the transient (either ZTF, TNS, or other)
+    ra_in                   : R.A. in degrees or hms format
+    dec_in                  : Dec. in degrees or dms format
+    redshift                : redshift, only required for redshift classifier
+    acceptance_radius       : match objects for catalog cross-matching; in arcseconds
+    import_ZTF              : Import ZTF data (True) or read existing file (False)
+    import_OSC              : Import OSC data (True) or read existing file (False)
+    import_local            : Import local data from ./photometry directory
+    import_lightcurve       : Regenerate existing lightcurve file (True) or read
+                              the existing out from ./lightcurves (False)
+    reimport_catalog        : Overwrite the existing 3PI/SDSS catalog
+    search_radius           : Search radius in arcminutes for the 3PI/SDSS catalog
+    dust_map                : 'SF' or 'SFD', to query Schlafy and Finkbeiner 2011
+                              or Schlafy, Finkbeiner and Davis 1998.
+                              set to 'none' to not correct for extinction
+    Pcc_filter              : The effective magnitude, radius, and Pcc
+                              are calculated in this filter.
+    Pcc_filter_alternative  : If Pcc_filter is not found, use this one
+                              as an acceptable alternative.
+    star_separation         : A star needs to be this close to be matched
+                              to a transient [in Arcsec]
+    star_cut                : maximum allowed probability of an object to be a star
+    hostless_cut            : Only consider hosts with a Pcc lower than this
+    neighbors               : neighbors to use for star/galaxy separator
+    recalculate_nature      : Overwrite existing Nature column?
+    object_class            : Transient type, to overwrite any existing classes
+    plot_lightcurve         : Save an output plot with the light curve and PS1 image?
+    do_observability        : Calculate Observavility from Magellan and MMT?
+
+    Returns
+    ---------------
+    Predicted Probability to be ['AGN','SLSN-I','SLSN-II','SNII','SNIIb','SNIIn','SNIa','SNIbc','Star','TDE']
+
+    '''
+    print('\n################# FLEET #################')
+
+    ##### Basic transient info #####
+    ra_deg, dec_deg, transient_source, object_name, ztf_data, ztf_name, tns_name, object_class, osc_data = get_transient_info(object_name_in, ra_in, dec_in, object_class, acceptance_radius, import_ZTF, import_OSC, import_lightcurve)
+    if ra_deg == '--': return table.Table()
+    print('%s %s %s'%(object_name, ra_deg, dec_deg))
+    if dec_deg <= -32:
+        print('dec = %s, too low for SDSS or 3PI'%dec_deg)
+        return table.Table()
+
+    ##### Catalog data #####
+    data_catalog_out = get_catalog(object_name, ra_deg, dec_deg, search_radius, dust_map, reimport_catalog)
+    if len(data_catalog_out) == 0:
+        print('No data found in SDSS or 3PI')
+        return table.Table()
+
+    ##### Catalog Operations #####
+    print('Creating Catalog ...')
+    data_catalog = catalog_operations(object_name, data_catalog_out, ra_deg, dec_deg, Pcc_filter, Pcc_filter_alternative, neighbors, recalculate_nature)
+
+    ##### Find the Best host #####
+    host_radius, host_separation, host_ra, host_dec, host_Pcc, host_magnitude, host_nature, photoz, photoz_err, specz, specz_err, best_host = get_best_host(data_catalog, star_separation, star_cut)
+
+    ##### Use Appropriate Redshift #####
+    if np.isfinite(float(redshift)):
+        # User specified redshift
+        use_redshift   = float(redshift)
+        redshift_label = 'specz'
+    elif np.isfinite(float(specz)):
+        # Spectroscopic Redshift
+        use_redshift   = float(specz)
+        redshift_label = 'specz'
+    elif np.isfinite(float(photoz)):
+        # Photometric Redshift
+        use_redshift   = float(photoz)
+        redshift_label = 'photoz'
+    else:
+        # No Redshift
+        use_redshift   = np.nan
+        redshift_label = 'none'
+
+    ##### Get Features #####
+    features_table = create_features(object_name, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, host_radius, host_separation, host_Pcc, host_magnitude, np.nan, hostless_cut, use_redshift)
+
+    # Calculate Observability
+    Dates_MMT, Airmass_MMT, SunElevation_MMT, Dates_Magellan, Airmass_Magellan, SunElevation_Magellan, MMT_observable, Magellan_observable = calculate_observability(ra_deg, dec_deg, do_observability)
+
+    # Output Array
+    info_data  = np.array([object_name, ztf_name, tns_name, object_class, ra_deg, dec_deg, host_radius, host_separation, host_ra, host_dec, host_Pcc, host_magnitude, host_nature, photoz, photoz_err, specz, specz_err, use_redshift, redshift_label])
+    info_names = ['object_name'       ,'ztf_name'             ,'tns_name'             ,'object_class'         ,'ra_deg'               ,'dec_deg'              ,'host_radius'          ,'host_separation'      ,'host_ra'              ,'host_dec'          ,'host_Pcc'           ,'host_magnitude',
+                  'host_nature'       ,'photoz'               ,'photoz_err'           ,'specz'                ,'specz_err'            ,'use_redshift'         ,'redshift_label']
+    info_table = table.Table(info_data, names = info_names)
+
+    # Dummy Light Curve Table
+    output_names = ['MJD'    , 'Mag'    , 'MagErr' , 'Telescope', 'Filter', 'Source', 'UL'   , 'Ignore']
+    output_types = ['float64', 'float64', 'float64', 'S25'      , 'S25'   , 'S25'   , 'S25'  , 'S25'   ]
+    output_data  = [50000    , 20.0     , 0.1      , 'FLWO'     , 'r'     , 'FLWO'  , 'False', 'False' ]
+    output_table = table.Table(data = np.array(output_data).T, names = output_names, dtype = output_types)
+
+    print('Plotting ...')
+    if plot_lightcurve:
+        make_plot(object_name + '_host', ra_deg, dec_deg, output_table, data_catalog, info_table, best_host, host_radius, host_separation, host_ra, host_dec, host_Pcc, host_magnitude, host_nature, 50000, 50000, search_radius, star_cut, Dates_MMT, Airmass_MMT, SunElevation_MMT, Dates_Magellan, Airmass_Magellan, SunElevation_Magellan)
     
     return info_table
