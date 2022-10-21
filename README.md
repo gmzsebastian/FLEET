@@ -5,7 +5,11 @@ Finding Luminous and Exotic Extragalactic Transients.
 
 <p align="center"><img src="FLEET_scheme.png" align="center" alt="FLEET_scheme" width="900"/></p>
 
-A machine-learning pipeline designed to predict the probability of transients to be a superluminous supernova, associated with this paper : http://arxiv.org/abs/2009.01853
+FLEET is a machine learning pipeline designed to predict the probability of transients to be either a superluminous supernova or a tidal disruption event. The original FLEET paper is https://ui.adsabs.harvard.edu/abs/2020ApJ...904...74G/abstract
+
+The paper describing the first two years of operations can be found at https://arxiv.org/abs/2210.10811
+
+The current version found in this repository is an unofficial version of the FLEET 2.0 algorithm described in https://arxiv.org/abs/2210.10810, the final FLEET 2.0 version will be released upon acceptance of this manuscript.
 
 # Setup
 In order to use FLEET you will need to have two keys in your system. One to query 3PI, and one to query the TNS. FLEET will search for these files in your home directory:
