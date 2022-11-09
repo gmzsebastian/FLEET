@@ -177,7 +177,7 @@ def plot_1a(time, y_0 = 0.95717, m = 0.01817, t_0 = 4.63783, g_0 = -0.91248, sig
 # Model Type Ia
 time_1a_model_r, magnitude_1a_model_r = plot_1a(np.linspace(-15, 120, 500), 0.92540, 0.0182386,  3.95539, -0.884576, 11.0422, -17.5522, 18.7745)
 
-def quick_plot(object_name, ra_deg, dec_deg, output_table, first_mjd, bright_mjd, g_correct = 0, r_correct = 0, red_amplitude = np.nan, red_amplitude2 = np.nan, red_offset = np.nan, red_magnitude = np.nan, green_amplitude = np.nan, green_amplitude2 = np.nan, green_offset = np.nan, green_magnitude = np.nan, chi2 = np.nan, full_range = False):
+def quick_plot(object_name, object_class, ra_deg, dec_deg, output_table, first_mjd, bright_mjd, g_correct = 0, r_correct = 0, red_amplitude = np.nan, red_amplitude2 = np.nan, red_offset = np.nan, red_magnitude = np.nan, green_amplitude = np.nan, green_amplitude2 = np.nan, green_offset = np.nan, green_magnitude = np.nan, chi2 = np.nan, full_range = False):
     '''
     Create a diagnosis plot with the light curve and field image of a transient
     Parameters
@@ -216,8 +216,24 @@ def quick_plot(object_name, ra_deg, dec_deg, output_table, first_mjd, bright_mjd
         os.system("mkdir plots")
 
     # Plot Lightcurve
-    plot_lightcurve(1, 1, 1, output_table_correct, first_mjd, bright_mjd, full_range = full_range, red_amplitude = red_amplitude, red_amplitude2 = red_amplitude2, red_offset = red_offset, red_magnitude = red_magnitude, green_amplitude = green_amplitude, green_amplitude2 = green_amplitude2, green_offset = green_offset, green_magnitude = green_magnitude, chi2 = chi2)
+    #plot_lightcurve(1, 1, 1, output_table_correct, first_mjd, bright_mjd, full_range = full_range, red_amplitude = red_amplitude, red_amplitude2 = red_amplitude2, red_offset = red_offset, red_magnitude = red_magnitude, green_amplitude = green_amplitude, green_amplitude2 = green_amplitude2, green_offset = green_offset, green_magnitude = green_magnitude, chi2 = chi2)
 
+    #plt.savefig('plots/%s_quick.pdf'%object_name, bbox_inches = 'tight')
+    #plt.clf(); plt.close('all')
+    
+    fig = plt.figure(figsize = (8, 7))
+    plt.subplots_adjust(hspace = 0.2)
+
+    # Plot Lightcurve
+    plot_lightcurve(2, 1, 1, output_table_correct, first_mjd, bright_mjd, full_range = False, red_amplitude = red_amplitude, 
+                    red_amplitude2 = red_amplitude2, red_offset = red_offset, red_magnitude = red_magnitude, green_amplitude = green_amplitude, 
+                    green_amplitude2 = green_amplitude2, green_offset = green_offset, green_magnitude = green_magnitude)
+    plt.title(object_name + ' - ' + object_class)
+    plt.xlim(xmax = 100)
+
+    plot_lightcurve(2, 1, 2, output_table_correct, first_mjd, bright_mjd, full_range = True, red_amplitude = red_amplitude, 
+                    red_amplitude2 = red_amplitude2, red_offset = red_offset, red_magnitude = red_magnitude, green_amplitude = green_amplitude, 
+                    green_amplitude2 = green_amplitude2, green_offset = green_offset, green_magnitude = green_magnitude)
     plt.savefig('plots/%s_quick.pdf'%object_name, bbox_inches = 'tight')
     plt.clf(); plt.close('all')
 
@@ -304,14 +320,17 @@ def plot_lightcurve(sub_y, sub_x, sub_n, output_table, first_mjd, bright_mjd, re
 
     # Include offsets if specified
     if full_range:
-        plt.xlim(np.nanmin(all_times), np.nanmax(all_times))
+        mino, maxo = np.nanmin(all_times), np.nanmax(all_times)
     else:
-        plt.xlim(phase_minimum - subtract_phase, phase_maximum + add_phase)
+        mino, maxo = phase_minimum - subtract_phase, phase_maximum + add_phase
+    # Making sure the min and max are not the same, otherwise who cares
+    if mino != maxo:
+        plt.xlim(mino, maxo)
 
     # Plot Data (detections)
-    plt.errorbar(all_phases[detection][is_det_ZTF]  , all_magnitudes[detection][is_det_ZTF]  , all_sigmas[detection][is_det_ZTF]  , ecolor = all_colors[detection][is_det_ZTF].astype('str')  ,     fmt = 'd'   , alpha = 0.8, ms = 0)
+    plt.errorbar(all_phases[detection][is_det_ZTF]  , all_magnitudes[detection][is_det_ZTF]  , all_sigmas[detection][is_det_ZTF]     , ecolor = all_colors[detection][is_det_ZTF].astype('str')  ,     fmt = 'd'   , alpha = 0.8, ms = 0)
     plt.errorbar(all_phases[detection][is_det_Local] , all_magnitudes[detection][is_det_Local] , all_sigmas[detection][is_det_Local] , ecolor = all_colors[detection][is_det_Local].astype('str') ,     fmt = '*'   , alpha = 0.8, ms = 0)
-    plt.errorbar(all_phases[detection][is_det_other], all_magnitudes[detection][is_det_other], all_sigmas[detection][is_det_other], ecolor = all_colors[detection][is_det_other].astype('str'),     fmt = '.'   , alpha = 0.8, ms = 0)
+    plt.errorbar(all_phases[detection][is_det_other], all_magnitudes[detection][is_det_other], all_sigmas[detection][is_det_other]   , ecolor = all_colors[detection][is_det_other].astype('str'),     fmt = '.'   , alpha = 0.8, ms = 0)
     plt.scatter (all_phases[detection][is_det_ZTF]  , all_magnitudes[detection][is_det_ZTF]  ,                                       color = all_colors[detection][is_det_ZTF].astype('str')  ,  marker = 'd'   , alpha = 0.8, s = 90)
     plt.scatter (all_phases[detection][is_det_Local] , all_magnitudes[detection][is_det_Local] ,                                       color = all_colors[detection][is_det_Local].astype('str') ,  marker = '*'   , alpha = 0.8, s = 90)
     plt.scatter (all_phases[detection][is_det_other], all_magnitudes[detection][is_det_other],                                       color = all_colors[detection][is_det_other].astype('str'),  marker = '.'   , alpha = 0.8, s = 90)
@@ -550,9 +569,10 @@ def plot_nature_mag_distance(sub_y, sub_x, sub_n, separation, hosts_magnitudes, 
     plt.scatter(host_separation, host_magnitude, marker='+', alpha = 1.0, color = 'b', s = 1000)
     plt.axhline(float(transient_magnitude), color = 'b', linestyle = '--', linewidth = 1, label = "Brightest Mag = %s"%np.around(float(transient_magnitude), decimals = 2))
     plt.axhline(float(host_magnitude), color = 'k', linestyle = '-.', linewidth = 1)
-    plt.annotate(str(np.around(host_nature, decimals = 2)), xy=(host_separation, host_magnitude))
-    if host_separation != closest_separation:
-        plt.annotate(str(np.around(closest_nature, decimals = 2)), xy=(closest_separation, closest_magnitude))
+    if host_separation < search_radius * 60 + 2:
+        plt.annotate(str(np.around(host_nature, decimals = 2)), xy=(host_separation, host_magnitude))
+        if host_separation != closest_separation:
+            plt.annotate(str(np.around(closest_nature, decimals = 2)), xy=(closest_separation, closest_magnitude))
     plt.legend(loc = 'best', fancybox = True)
     plt.xlim(0, search_radius * 60 + 2)
     plt.xlabel("Distance from Transient [Arcsec]")
@@ -596,9 +616,10 @@ def plot_host_mag_distance(sub_y, sub_x, sub_n, separation_total, brightest_host
     plt.scatter(host_separation, host_magnitude, marker='+', alpha = 1.0, color = 'b', s = 1000)
     plt.axhline(float(transient_magnitude), color = 'b', linestyle = '--', linewidth = 1)
     plt.axhline(float(host_magnitude), color = 'k', linestyle = '-.', linewidth = 1)
-    if host_separation != closest_separation:
-        plt.annotate(str(np.around(closest_probability, decimals = 2)), xy=(closest_separation, closest_magnitude))
-    plt.annotate(str(np.around(host_probability, decimals = 2)), xy=(host_separation, host_magnitude))
+    if host_separation <= search_radius * 60 + 2:
+        if host_separation != closest_separation:
+            plt.annotate(str(np.around(closest_probability, decimals = 2)), xy=(closest_separation, closest_magnitude))
+        plt.annotate(str(np.around(host_probability, decimals = 2)), xy=(host_separation, host_magnitude))
     plt.legend(loc = 'best', fancybox = True)
     plt.xlim(0, search_radius * 60 + 2)
     plt.xlabel("Distance from Transient [Arcsec]")
@@ -643,7 +664,7 @@ def plot_host_information(sub_y, sub_x, sub_n, ra_deg, dec_deg, info_table, host
     b_deg     = coords.galactic.b.value
 
     # Redsfhit Info
-    redshift = info_table['use_redshift']
+    redshift = info_table['redshift']
     redshift_label = info_table['redshift_label']
 
     # If there's additional photo-z info, add it
@@ -758,26 +779,26 @@ def plot_host_information(sub_y, sub_x, sub_n, ra_deg, dec_deg, info_table, host
 
     # ML Classification
     legend_name += '           AGN  SLSN-I  SLSN-II  SNII  SNI  Star  TDE\n'
-    if np.isfinite(P_quick_AGN):
-        if np.isfinite(P_quick_AGN_std):
-            legend_name += r'early      %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f'%(P_quick_AGN,P_quick_AGN_std,P_quick_SLSNI,P_quick_SLSNI_std,P_quick_SLSNII,P_quick_SLSNII_std,P_quick_SNII,P_quick_SNII_std,P_quick_SNI,P_quick_SNI_std,P_quick_Star,P_quick_Star_std,P_quick_TDE,P_quick_TDE_std) + '\n'
-        else:
-            legend_name += r'early      %.0f        %.0f        %.0f        %.0f        %.0f        %.0f        %.0f     '%(P_quick_AGN,P_quick_SLSNI,P_quick_SLSNII,P_quick_SNII,P_quick_SNI,P_quick_Star,P_quick_TDE) + '\n'
     if np.isfinite(P_late_AGN):
         if np.isfinite(P_late_AGN_std):
-            legend_name += r'late       %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f'%(P_late_AGN,P_late_AGN_std,P_late_SLSNI,P_late_SLSNI_std,P_late_SLSNII,P_late_SLSNII_std,P_late_SNII,P_late_SNII_std,P_late_SNI,P_late_SNI_std,P_late_Star,P_late_Star_std,P_late_TDE,P_late_TDE_std) + '\n'
+            legend_name += r'Late       %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f'%(P_late_AGN,P_late_AGN_std,P_late_SLSNI,P_late_SLSNI_std,P_late_SLSNII,P_late_SLSNII_std,P_late_SNII,P_late_SNII_std,P_late_SNI,P_late_SNI_std,P_late_Star,P_late_Star_std,P_late_TDE,P_late_TDE_std) + '\n'
         else:
-            legend_name += r'late       %.0f        %.0f        %.0f        %.0f        %.0f        %.0f        %.0f     '%(P_late_AGN,P_late_SLSNI,P_late_SLSNII,P_late_SNII,P_late_SNI,P_late_Star,P_late_TDE) + '\n'
-    if np.isfinite(P_redshift_AGN):
-        if np.isfinite(P_redshift_AGN_std):
-            legend_name += r'redshift %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f'%(P_redshift_AGN,P_redshift_AGN_std,P_redshift_SLSNI,P_redshift_SLSNI_std,P_redshift_SLSNII,P_redshift_SLSNII_std,P_redshift_SNII,P_redshift_SNII_std,P_redshift_SNI,P_redshift_SNI_std,P_redshift_Star,P_redshift_Star_std,P_redshift_TDE,P_redshift_TDE_std) + '\n'
+            legend_name += r'Late       %.0f        %.0f        %.0f        %.0f        %.0f        %.0f        %.0f     '%(P_late_AGN,P_late_SLSNI,P_late_SLSNII,P_late_SNII,P_late_SNI,P_late_Star,P_late_TDE) + '\n'
+    if np.isfinite(P_quick_AGN):
+        if np.isfinite(P_quick_AGN_std):
+            legend_name += r'SLSN       %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f'%(P_quick_AGN,P_quick_AGN_std,P_quick_SLSNI,P_quick_SLSNI_std,P_quick_SLSNII,P_quick_SLSNII_std,P_quick_SNII,P_quick_SNII_std,P_quick_SNI,P_quick_SNI_std,P_quick_Star,P_quick_Star_std,P_quick_TDE,P_quick_TDE_std) + '\n'
         else:
-            legend_name += r'redshift %.0f        %.0f        %.0f        %.0f        %.0f        %.0f        %.0f     '%(P_redshift_AGN,P_redshift_SLSNI,P_redshift_SLSNII,P_redshift_SNII,P_redshift_SNI,P_redshift_Star,P_redshift_TDE) + '\n'
+            legend_name += r'SLSN       %.0f        %.0f        %.0f        %.0f        %.0f        %.0f        %.0f     '%(P_quick_AGN,P_quick_SLSNI,P_quick_SLSNII,P_quick_SNII,P_quick_SNI,P_quick_Star,P_quick_TDE) + '\n'
+    #if np.isfinite(P_redshift_AGN):
+    #    if np.isfinite(P_redshift_AGN_std):
+    #        legend_name += r'redshift %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f'%(P_redshift_AGN,P_redshift_AGN_std,P_redshift_SLSNI,P_redshift_SLSNI_std,P_redshift_SLSNII,P_redshift_SLSNII_std,P_redshift_SNII,P_redshift_SNII_std,P_redshift_SNI,P_redshift_SNI_std,P_redshift_Star,P_redshift_Star_std,P_redshift_TDE,P_redshift_TDE_std) + '\n'
+    #    else:
+    #        legend_name += r'redshift %.0f        %.0f        %.0f        %.0f        %.0f        %.0f        %.0f     '%(P_redshift_AGN,P_redshift_SLSNI,P_redshift_SLSNII,P_redshift_SNII,P_redshift_SNI,P_redshift_Star,P_redshift_TDE) + '\n'
     if np.isfinite(P_host_AGN):
         if np.isfinite(P_host_AGN_std):
-            legend_name += r'host       %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f'%(P_host_AGN,P_host_AGN_std,P_host_SLSNI,P_host_SLSNI_std,P_host_SLSNII,P_host_SLSNII_std,P_host_SNII,P_host_SNII_std,P_host_SNI,P_host_SNI_std,P_host_Star,P_host_Star_std,P_host_TDE,P_host_TDE_std)
+            legend_name += r'TDE        %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f   %.0f$\pm$%.0f'%(P_host_AGN,P_host_AGN_std,P_host_SLSNI,P_host_SLSNI_std,P_host_SLSNII,P_host_SLSNII_std,P_host_SNII,P_host_SNII_std,P_host_SNI,P_host_SNI_std,P_host_Star,P_host_Star_std,P_host_TDE,P_host_TDE_std)
         else:
-            legend_name += r'host       %.0f        %.0f        %.0f        %.0f        %.0f        %.0f        %.0f     '%(P_host_AGN,P_host_SLSNI,P_host_SLSNII,P_host_SNII,P_host_SNI,P_host_Star,P_host_TDE)
+            legend_name += r'TDE        %.0f        %.0f        %.0f        %.0f        %.0f        %.0f        %.0f     '%(P_host_AGN,P_host_SLSNI,P_host_SLSNII,P_host_SNII,P_host_SNI,P_host_Star,P_host_TDE)
 
     plt.tick_params(axis='both', left=False, top=False, right=False, bottom=False, labelleft=False, labeltop=False, labelright=False, labelbottom=False)
     plt.annotate(legend_name, xy = (0.02, 0.96), fontsize = 10, va = 'top')
@@ -838,22 +859,24 @@ def plot_ra_dec_size(sub_y, sub_x, sub_n, objects_ra, objects_dec, ra_deg, dec_d
 
     Lum_Transient = 10 ** 9 * (10 ** (-0.4 * float(transient_magnitude)))
 
+    within = (flot(objects_ra) < ra_deg + search_radius / 60) & (flot(objects_ra) > ra_deg - search_radius / 60) & (flot(objects_dec) < dec_deg + search_radius / 60) & (flot(objects_dec) > dec_deg - search_radius / 60)
+
     plt.subplot(sub_y, sub_x, sub_n)
     plt.gca().invert_xaxis()
     plt.title("Probability of being a Galaxy (Size)")
-    plt.scatter(flot(objects_ra), flot(objects_dec), s = (output_nature + 0.1)*1000, c = (output_nature + 0.1)*1000, vmin=0, vmax=1000, alpha = 0.75)
+    plt.scatter(flot(objects_ra[within]), flot(objects_dec[within]), s = (output_nature[within] + 0.1)*1000, c = (output_nature[within] + 0.1)*1000, vmin=0, vmax=1000, alpha = 0.75)
     plt.scatter(ra_deg, dec_deg, marker='*', color = 'r', s = Lum_Transient)
     plt.scatter(host_ra, host_dec, marker='+', alpha = 1.0, color = 'b', s = 1000)
     plt.xlabel("RA")
     plt.ylabel("DEC")
-    plt.xlim(ra_deg + search_radius / 60, ra_deg - search_radius / 60)
+    plt.xlim(ra_deg  + search_radius / 60, ra_deg  - search_radius / 60)
     plt.ylim(dec_deg - search_radius / 60, dec_deg + search_radius / 60)
     #ax1.xaxis.set_major_formatter(ScalarFormatter(useOffset=False))
     #ax1.yaxis.set_major_formatter(ScalarFormatter(useOffset=False))
     plt.ticklabel_format(useOffset=False)
-    for j in range(len(objects_ra)):
-        if np.isfinite(halflight_radius[j]):
-            plt.annotate(str(np.around(halflight_radius[j], decimals = 2)), xy=(objects_ra[j], objects_dec[j]))
+    for j in range(len(objects_ra[within])):
+        if np.isfinite(halflight_radius[within][j]):
+            plt.annotate(str(np.around(halflight_radius[within][j], decimals = 2)), xy=(objects_ra[within][j], objects_dec[within][j]))
 
 def plot_ra_dec_magnitude(sub_y, sub_x, sub_n, objects_ra, objects_dec, ra_deg, dec_deg, hosts_magnitudes, host_ra, host_dec, search_radius, transient_magnitude):
     '''
@@ -1141,7 +1164,7 @@ def plot_coordinates(sub_y, sub_x, sub_n, ra_deg, dec_deg, data_catalog, closest
     plt.xlabel('RA [arcsec]')
     plt.ylabel('DEC [arcsec]')
 
-def make_plot(object_name, ra_deg, dec_deg, output_table, data_catalog, info_table, best_host, host_radius, host_separation, host_ra, host_dec, host_Pcc, host_magnitude, host_nature, first_mjd, bright_mjd, search_radius, star_cut, Dates_MMT, Airmass_MMT, SunElevation_MMT, Dates_Magellan, Airmass_Magellan, SunElevation_Magellan, red_amplitude = np.nan, red_amplitude2 = np.nan, red_offset = np.nan, red_magnitude = np.nan, green_amplitude = np.nan, green_amplitude2 = np.nan, green_offset = np.nan, green_magnitude = np.nan, chi2 = np.nan, g_correct = 0, r_correct = 0):
+def make_plot(object_name, ra_deg, dec_deg, output_table, data_catalog, info_table, best_host, host_radius, host_separation, host_ra, host_dec, host_Pcc, host_magnitude, host_nature, first_mjd, bright_mjd, search_radius, star_cut, Dates_MMT, Airmass_MMT, SunElevation_MMT, Dates_Magellan, Airmass_Magellan, SunElevation_Magellan, do_observability, red_amplitude = np.nan, red_amplitude2 = np.nan, red_offset = np.nan, red_magnitude = np.nan, green_amplitude = np.nan, green_amplitude2 = np.nan, green_offset = np.nan, green_magnitude = np.nan, chi2 = np.nan, g_correct = 0, r_correct = 0):
     '''
     Create a diagnosis plot with the light curve and field image of a transient
 
@@ -1224,7 +1247,8 @@ def make_plot(object_name, ra_deg, dec_deg, output_table, data_catalog, info_tab
     plot_nature_mag_distance(3, 4,  1, separation, hosts_magnitudes, output_nature, transient_magnitude, host_separation, host_magnitude, host_nature, closest_separation, closest_magnitude, closest_nature, search_radius_close)
     plot_host_mag_distance  (3, 4,  2, separation, hosts_magnitudes, output_nature, chance_coincidence, transient_magnitude, host_separation, host_magnitude, host_Pcc, closest_separation, closest_magnitude, closest_coincidence, search_radius_close, star_cut)
     plot_host_information   (3, 4,  3, ra_deg, dec_deg, info_table, host_radius, host_separation, host_magnitude, transient_magnitude)
-    plot_observability      (3, 4,  4, ra_deg, dec_deg, Dates_MMT, Airmass_MMT, SunElevation_MMT, Dates_Magellan, Airmass_Magellan, SunElevation_Magellan)
+    if do_observability:
+        plot_observability  (3, 4,  4, ra_deg, dec_deg, Dates_MMT, Airmass_MMT, SunElevation_MMT, Dates_Magellan, Airmass_Magellan, SunElevation_Magellan)
     plot_ra_dec_size        (3, 4,  5, objects_ra, objects_dec, ra_deg, dec_deg, output_nature, host_ra, host_dec, search_radius, halflight_radius, transient_magnitude)
     plot_ra_dec_magnitude   (3, 4,  6, objects_ra, objects_dec, ra_deg, dec_deg, hosts_magnitudes, host_ra, host_dec, search_radius, transient_magnitude)
     plot_field_image        (3, 4,  7, ra_deg, dec_deg, object_name, search_radius = search_radius)

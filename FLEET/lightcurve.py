@@ -29,7 +29,7 @@ def lnlike_double(theta, x, y, z):
 
     return Likely
 
-def lnlike_single(theta, x, y, z, W2 = 0.6):
+def lnlike_single(theta, x, y, z, W2):
     # Likelihood function fixing W1 to 0.6
     # the average from fitting the full light curves
     amplitude, offset, magnitude = theta
@@ -69,12 +69,12 @@ def lnprob_double(theta, x, y, z):
         return -np.inf
     return lp + lnlike_double(theta, x, y, z)
 
-def lnprob_single(theta, x, y, z):
+def lnprob_single(theta, x, y, z, W2):
     # Return likelihood function + Prior
     lp = lnprior_single(theta)
     if not np.isfinite(lp):
         return -np.inf
-    return lp + lnlike_single(theta, x, y, z)
+    return lp + lnlike_single(theta, x, y, z, W2)
 
 # Function for finding reduced chi squared
 def calc_chi2(ydata, ymod, n_parameters, sigma):
@@ -101,7 +101,7 @@ def calc_chi2(ydata, ymod, n_parameters, sigma):
     else:
         return chisq
 
-def fit_linex(output_table, date_range = np.inf, n_walkers = 50, n_steps = 500, n_cores = 1, model = 'double', g_correct = 0, r_correct = 0, late_phase = 40):
+def fit_linex(output_table, date_range = np.inf, n_walkers = 50, n_steps = 1000, n_cores = 1, model = 'double', g_correct = 0, r_correct = 0, late_phase = 40, default_err = 0.1, default_A2_g = 0.55, default_A2_r = 0.37):
     '''
     Use emcee to fit an exponential function to the green and red light curves
     of a transient.
@@ -118,6 +118,7 @@ def fit_linex(output_table, date_range = np.inf, n_walkers = 50, n_steps = 500, 
     g_correct     : extinction value in g band
     r_correct     : extinction value in r band
     late_phase    : Phase at which to calculate the late color
+    default_err   : Default value for points with no error bars
 
     Output
     ---------------
@@ -155,10 +156,31 @@ def fit_linex(output_table, date_range = np.inf, n_walkers = 50, n_steps = 500, 
     all_mags  = np.append(g_mag, r_mag)
     all_times = np.append(g_time, r_time)
 
+    # Default Values
+    red_amplitude    = np.nan
+    red_amplitude2   = np.nan
+    red_offset       = np.nan
+    red_magnitude    = np.nan
+    green_amplitude  = np.nan
+    green_amplitude2 = np.nan
+    green_offset     = np.nan
+    green_magnitude  = np.nan
+    model_color      = np.nan
+    late_color       = np.nan
+    late_color10     = np.nan
+    late_color20     = np.nan
+    late_color40     = np.nan
+    late_color60     = np.nan
+    bright_mjd       = all_MJDs[np.nanargmin(output_table['Mag'])]
+    first_mjd        = np.nanmin(all_MJDs)
+    green_brightest  = np.nan
+    red_brightest    = np.nan
+    chi2             = np.nan
+
     # Make sure there's at least 2 data points in each band
     if (len(g_mag) > 1) & (len(r_mag) > 1):
         # Find brightest date and magnitude
-        bright_mjd = all_times[np.nanargmin(all_mags)]
+        bright_mjd = all_times[np.nanargmin(all_mags)] # Already Ignoring UL = True and Ignore = True
         first_mjd  = np.nanmin(all_MJDs[np.where((all_upperlimits == 'False') & (all_ignores == 'False'))])
         bright_mag = np.nanmin(all_mags)
         
@@ -171,10 +193,10 @@ def fit_linex(output_table, date_range = np.inf, n_walkers = 50, n_steps = 500, 
         r_first = np.array(output_table['MJD'][red  ] - first_mjd)
 
         # Overwrite Errorbars that don't exist
-        g_magerr[np.isnan(g_magerr)] = 0.1
-        r_magerr[np.isnan(r_magerr)] = 0.1
-        g_magerr[g_magerr==0.0     ] = 0.1
-        r_magerr[r_magerr==0.0     ] = 0.1
+        g_magerr[np.isnan(g_magerr)] = default_err
+        r_magerr[np.isnan(r_magerr)] = default_err
+        g_magerr[g_magerr==0.0     ] = default_err
+        r_magerr[r_magerr==0.0     ] = default_err
 
         # Select only a subset of data that's within 50 days of peak
         good_g = np.where(np.isfinite(g_phase) & (g_first < date_range) & np.isfinite(g_mag) & np.isfinite(g_magerr))[0]
@@ -226,8 +248,8 @@ def fit_linex(output_table, date_range = np.inf, n_walkers = 50, n_steps = 500, 
                 sampler_red   = emcee.EnsembleSampler(n_walkers, n_dim, lnprob_double, args=(x_r, y_r, z_r), threads=n_cores)
                 sampler_green = emcee.EnsembleSampler(n_walkers, n_dim, lnprob_double, args=(x_g, y_g, z_g), threads=n_cores)
             elif model == 'single':
-                sampler_red   = emcee.EnsembleSampler(n_walkers, n_dim, lnprob_single, args=(x_r, y_r, z_r), threads=n_cores)
-                sampler_green = emcee.EnsembleSampler(n_walkers, n_dim, lnprob_single, args=(x_g, y_g, z_g), threads=n_cores)
+                sampler_red   = emcee.EnsembleSampler(n_walkers, n_dim, lnprob_single, args=(x_r, y_r, z_r, default_A2_r), threads=n_cores)
+                sampler_green = emcee.EnsembleSampler(n_walkers, n_dim, lnprob_single, args=(x_g, y_g, z_g, default_A2_g), threads=n_cores)
 
             # Run the MCMC
             sampler_red.run_mcmc(pos, n_steps)
@@ -237,12 +259,13 @@ def fit_linex(output_table, date_range = np.inf, n_walkers = 50, n_steps = 500, 
             samples_r_crop = sampler_red.chain  [:, int(3*n_steps/4):, :].reshape((-1, n_dim))
             samples_g_crop = sampler_green.chain[:, int(3*n_steps/4):, :].reshape((-1, n_dim))
 
+
             # Obtain the parametrs of the best fit
             if model == 'single':
                 amplitude_mcmc_r, offset_mcmc_r, magnitude_mcmc_r = map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]), zip(*np.percentile(samples_r_crop, [15.87, 50, 84.13], axis=0)))
                 amplitude_mcmc_g, offset_mcmc_g, magnitude_mcmc_g = map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]), zip(*np.percentile(samples_g_crop, [15.87, 50, 84.13], axis=0)))
-                amplitude2_mcmc_r = (0.6, 0.6, 0.6)
-                amplitude2_mcmc_g = (0.6, 0.6, 0.6)
+                amplitude2_mcmc_r = (default_A2_r, default_A2_r, default_A2_r)
+                amplitude2_mcmc_g = (default_A2_g, default_A2_g, default_A2_g)
             elif model == 'double':
                 amplitude_mcmc_r, amplitude2_mcmc_r, offset_mcmc_r, magnitude_mcmc_r = map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]), zip(*np.percentile(samples_r_crop, [15.87, 50, 84.13], axis=0)))
                 amplitude_mcmc_g, amplitude2_mcmc_g, offset_mcmc_g, magnitude_mcmc_g = map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]), zip(*np.percentile(samples_g_crop, [15.87, 50, 84.13], axis=0)))
@@ -255,8 +278,13 @@ def fit_linex(output_table, date_range = np.inf, n_walkers = 50, n_steps = 500, 
 
             # Get color at brightest point
             brightest_phase = np.append(r_phase[good_r], g_phase[good_g])[np.argmin(np.append(r_mag[good_r], g_mag[good_g]))]
-            model_color     = linex(brightest_phase, green_amplitude, green_amplitude2, green_offset, green_magnitude)-linex(brightest_phase, red_amplitude, red_amplitude2, red_offset, red_magnitude)
+            model_color     = linex(brightest_phase           , green_amplitude, green_amplitude2, green_offset, green_magnitude)-linex(brightest_phase           , red_amplitude, red_amplitude2, red_offset, red_magnitude)
             late_color      = linex(brightest_phase+late_phase, green_amplitude, green_amplitude2, green_offset, green_magnitude)-linex(brightest_phase+late_phase, red_amplitude, red_amplitude2, red_offset, red_magnitude)
+            # Calculate color at fixed phases
+            late_color10    = linex(brightest_phase+10, green_amplitude, green_amplitude2, green_offset, green_magnitude)-linex(brightest_phase+10, red_amplitude, red_amplitude2, red_offset, red_magnitude)
+            late_color20    = linex(brightest_phase+20, green_amplitude, green_amplitude2, green_offset, green_magnitude)-linex(brightest_phase+20, red_amplitude, red_amplitude2, red_offset, red_magnitude)
+            late_color40    = linex(brightest_phase+40, green_amplitude, green_amplitude2, green_offset, green_magnitude)-linex(brightest_phase+40, red_amplitude, red_amplitude2, red_offset, red_magnitude)
+            late_color60    = linex(brightest_phase+60, green_amplitude, green_amplitude2, green_offset, green_magnitude)-linex(brightest_phase+60, red_amplitude, red_amplitude2, red_offset, red_magnitude)
 
             # Calculate chi squared
             model_r = linex(x_r,   red_amplitude,   red_amplitude2,   red_offset,   red_magnitude)
@@ -267,12 +295,15 @@ def fit_linex(output_table, date_range = np.inf, n_walkers = 50, n_steps = 500, 
             sigma = np.append(z_r, z_g)
             # Calcualte chi squared
             chi2 = calc_chi2(ydata, ymod, 4, sigma)
-
-            return red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, model_color, late_color, bright_mjd, first_mjd, green_brightest, red_brightest, chi2
-
         else:
             print('Not enough g and r band points inside given range \n')
-            return np.nan * np.ones(15)
     else:
         print('Not enough g and r band points \n')
-        return np.nan * np.ones(15)
+        try:
+            bright_mjd = all_times[np.nanargmin(output_table['Mag'])]
+            first_mjd  = np.nanmin(all_MJDs)
+        except:
+            pass
+
+    return red_amplitude, red_amplitude2, red_offset, red_magnitude, green_amplitude, green_amplitude2, green_offset, green_magnitude, model_color, late_color, late_color10, late_color20, late_color40, late_color60, bright_mjd, first_mjd, green_brightest, red_brightest, chi2
+

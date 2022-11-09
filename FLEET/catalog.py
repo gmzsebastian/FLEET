@@ -340,7 +340,7 @@ def query_SDSS(ra_deg, dec_deg, search_radius = 1.0, timeout=60.0):
 
     # Define Query
     SDSS_query = """SELECT p.objid, -- Object ID
-               p.type, -- Type of object, Galaxy vs. Star or other
+               p.type, -- Type of object, Galaxy (3) vs. Star (6) or other
                p.clean, -- Is the photometry flagged? (1 = Clean, 0 = Dirty)
                p.ra, p.dec, -- RA and DEC
                p.raErr, p.decErr, -- RA and DEC Errors
@@ -485,6 +485,131 @@ def query_CFHTLS(ra_deg, dec_deg, search_radius):
 
     print('Found %s objects \n'%len(catalog_CFHTLS))
     return catalog_CFHTLS
+
+def query_GLADE(ra_deg, dec_deg, search_radius = 2):
+    '''
+    Query the GLADE catalog near the transient's coordinates
+    
+    Parameters
+    ---------------
+    ra_deg, dec_deg : Coordinates of the object in degrees.
+    search_radius   : Search radius in arcminutes
+
+    Returns
+    ---------------
+    RA, DEC, redshift, Magnitudes, object type
+    ex is extended source, 0 = point source
+    '''
+
+    # Query the GLADE database
+    coord = SkyCoord(ra_deg, dec_deg, unit="deg")
+    print('Querying GLADE ...')
+    new_vizier   = Vizier(catalog = 'VII/281', columns=['RAJ2000', 'DEJ2000', 'z', 'Bmag', 'e_Bmag'], row_limit = 10)
+    result_table = new_vizier.query_region(coord, radius = search_radius * u.arcmin, catalog = 'VII/281')
+
+    # If there was data, select columns
+    if result_table:
+        catalog_GLADE = result_table['VII/281/glade2']
+        # Clean up catalog
+        catalog_GLADE = make_nan(catalog_GLADE)
+
+        # Append column name
+        for i in range(len(catalog_GLADE.colnames)):
+            catalog_GLADE[catalog_GLADE.colnames[i]].name = catalog_GLADE.colnames[i] + '_GLADE'
+
+        # Only real values
+        catalog_GLADE = catalog_GLADE[np.isfinite(catalog_GLADE['RAJ2000_GLADE'])]
+    else:
+        catalog_GLADE = table.Table()
+
+    print('Found %s objects \n'%len(catalog_GLADE))
+    return catalog_GLADE
+
+GLADE_filename = pkg_resources.resource_filename(__name__, 'GLADE_short.txt')
+GLADE_cat = table.Table.read(GLADE_filename, format = 'ascii.fast_csv', delimiter = ',', guess = False)
+
+def overwrite_glade(ra_deg, dec_deg, object_name, data_catalog, GLADE_cat = GLADE_cat, query_original = False):
+    '''
+    Check if there is a GLADE catalog to overwrite the best host
+    
+    Parameters
+    ---------------
+    ra_deg, dec_deg : Coordinates of the object in degrees.
+    data_catalog    : Astropy table with data 
+    query_original  : query the original GLADE catalog?
+
+    Returns
+    ---------------
+    best_host_glade : index of best host
+    '''
+
+    # Empty result
+    best_host_glade = np.nan
+
+    # Read GLADE catalog if it exists
+    if query_original:
+        filename = f'GLADE/{object_name}.cat'
+        if os.path.exists(filename):
+            catalog_GLADE = table.Table.read(filename, format = 'ascii')
+            catalog_GLADE = catalog_GLADE[(catalog_GLADE['Bmag_GLADE'] < 16) & (catalog_GLADE['z_GLADE'] > 0)]
+
+            # If there are sources in the catalog
+            if len(catalog_GLADE) > 0:
+                # Calculate P_cc for all GLADE objects, assuming size = 1 arcsec
+                GLADE_RA   = flot(catalog_GLADE['RAJ2000_GLADE'])
+                GLADE_DEC  = flot(catalog_GLADE['DEJ2000_GLADE'])
+                GLADE_B    = flot(catalog_GLADE['Bmag_GLADE'])
+                separation = angular_separation(ra_deg, dec_deg, GLADE_RA, GLADE_DEC)
+                Pcc_GLADE  = calculate_coincidence(separation, 1, GLADE_B)
+
+                # Find the best host
+                best_GLADE = np.argmin(Pcc_GLADE)
+                # And its properties
+                best_ra, best_dec = GLADE_RA[best_GLADE], GLADE_DEC[best_GLADE]
+                best_pcc = Pcc_GLADE[best_GLADE]
+
+                # Calculate separation with SDSS / 3PI
+                separations_GLADE = flot(angular_separation(best_ra, best_dec, flot(data_catalog['ra_matched']), flot(data_catalog['dec_matched'])))
+                best_index = np.argmin(separations_GLADE)
+                min_sep = separations_GLADE[best_index]
+
+                # If the objects are close and the P_cc is low, use it
+                if (best_pcc < 0.01) & (min_sep < 1.0):
+                    print('Overwriting host with GLADE ...')
+                    best_host_glade = np.argmin(separations_GLADE)
+    else:
+        GLADE_RA  = flot(GLADE_cat['RA'])
+        GLADE_DEC = flot(GLADE_cat['DEC'])
+        GLADE_B   = flot(GLADE_cat['B'])
+        GLADE_z   = flot(GLADE_cat['z'])
+        # Only use sources within a degree of the target
+        use = (GLADE_RA < ra_deg + 1) & (GLADE_RA > ra_deg - 1) & (GLADE_DEC < dec_deg + 1) & (GLADE_DEC > dec_deg - 1) & (GLADE_B < 16) & (GLADE_z > 0)
+        if np.sum(use) > 0:
+            separation_in = angular_separation(ra_deg, dec_deg, GLADE_RA[use], GLADE_DEC[use])
+            GLADE_RA_use  = GLADE_RA [use][separation_in < 60]
+            GLADE_DEC_use = GLADE_DEC[use][separation_in < 60]
+            GLADE_B_use   = GLADE_B  [use][separation_in < 60]
+            if len(GLADE_RA_use) > 0:
+                separation = angular_separation(ra_deg, dec_deg, GLADE_RA_use, GLADE_DEC_use)
+                Pcc_GLADE  = calculate_coincidence(separation, 1, GLADE_B_use)
+
+                # Find the best host
+                best_GLADE = np.argmin(Pcc_GLADE)
+                # And its properties
+                best_ra, best_dec = GLADE_RA_use[best_GLADE], GLADE_DEC_use[best_GLADE]
+                best_pcc = Pcc_GLADE[best_GLADE]
+
+                # Calculate separation with SDSS / 3PI
+                separations_GLADE = flot(angular_separation(best_ra, best_dec, flot(data_catalog['ra_matched']), flot(data_catalog['dec_matched'])))
+                best_index = np.argmin(separations_GLADE)
+                min_sep = separations_GLADE[best_index]
+
+                # If the objects are close and the P_cc is low, use it
+                if (best_pcc < 0.01) & (min_sep < 1.0):
+                    print('Overwriting host with GLADE ...')
+                    best_host_glade = np.argmin(separations_GLADE)
+
+    return best_host_glade
 
 def query_gaia(ra_deg, dec_deg, search_radius):
     '''
@@ -959,6 +1084,7 @@ def get_catalog(object_name, ra_deg, dec_deg, search_radius = 1.0, dust_map = 'S
     Return
     ---------------
     Astropy table with all the objects around the transient
+    catalog_exists : whether or not the catalog was being read in
     '''
 
     # Create catalog folder if it doesn't exist
@@ -985,11 +1111,13 @@ def get_catalog(object_name, ra_deg, dec_deg, search_radius = 1.0, dust_map = 'S
         # Write output
         data_catalog_out.write(catalog_name, format='ascii', overwrite=True)
         print('Wrote ', catalog_name)
+        catalog_exists = False
     # Import existing catalog
     else:
         data_catalog_out = table.Table.read(catalog_files[0], format='ascii', guess=False)
+        catalog_exists = True
 
-    return data_catalog_out
+    return data_catalog_out, catalog_exists
 
 def get_kron_and_psf(color, catalog, data, error = False):
     '''
@@ -1015,6 +1143,10 @@ def get_kron_and_psf(color, catalog, data, error = False):
             else:
                 kron_magnitudes = flot(data['%sKronMag_3pi'%color])
                 psf_magnitude   = flot(data['%sPSFMag_3pi'%color])
+
+                # overwrite for bright stars with no kron mags
+                bright_star = (psf_magnitude < 17) & np.isnan(kron_magnitudes)
+                kron_magnitudes[bright_star] = psf_magnitude[bright_star]
         else:
             return np.nan * np.ones(len(data)), np.nan * np.ones(len(data))
     elif catalog == 'sdss':
@@ -1091,6 +1223,9 @@ def estimate_nature(kron_mag, psf_mag, kron_magnitudes, psf_magnitude, clear_sta
     # Final fraction
     galaxyness = n_galaxies / (n_stars + n_galaxies)
 
+    # Overwrite high end
+    # if (psf_mag < 17) & (deltamag > 0.5): galaxyness = 1.0
+
     return galaxyness
 
 def append_nature(object_name, classification_catalog, data_catalog_out, clear_stars, clear_galaxy, neighbors = 20, recalculate_nature = False):
@@ -1144,17 +1279,30 @@ def append_nature(object_name, classification_catalog, data_catalog_out, clear_s
         output_types = ['float64'] * len(filters)
 
         # Append nature to the input catalog
-        data_catalog_out.add_column(table.Column(data = nature_array[0], name = column_names[0], dtype = 'float64'))
-        data_catalog_out.add_column(table.Column(data = nature_array[1], name = column_names[1], dtype = 'float64'))
-        data_catalog_out.add_column(table.Column(data = nature_array[2], name = column_names[2], dtype = 'float64'))
-        data_catalog_out.add_column(table.Column(data = nature_array[3], name = column_names[3], dtype = 'float64'))
-        data_catalog_out.add_column(table.Column(data = nature_array[4], name = column_names[4], dtype = 'float64'))
-        data_catalog_out.add_column(table.Column(data = nature_array[5], name = column_names[5], dtype = 'float64'))
-        data_catalog_out.add_column(table.Column(data = nature_array[6], name = column_names[6], dtype = 'float64'))
-        data_catalog_out.add_column(table.Column(data = nature_array[7], name = column_names[7], dtype = 'float64'))
-        data_catalog_out.add_column(table.Column(data = nature_array[8], name = column_names[8], dtype = 'float64'))
-        data_catalog_out.add_column(table.Column(data = nature_array[9], name = column_names[9], dtype = 'float64'))
-        data_catalog_out.add_column(table.Column(data =  average_nature, name = 'object_nature', dtype = 'float64'))
+        if recalculate_nature:
+            data_catalog_out[column_names[0]] = nature_array[0]
+            data_catalog_out[column_names[1]] = nature_array[1]
+            data_catalog_out[column_names[2]] = nature_array[2]
+            data_catalog_out[column_names[3]] = nature_array[3]
+            data_catalog_out[column_names[4]] = nature_array[4]
+            data_catalog_out[column_names[5]] = nature_array[5]
+            data_catalog_out[column_names[6]] = nature_array[6]
+            data_catalog_out[column_names[7]] = nature_array[7]
+            data_catalog_out[column_names[8]] = nature_array[8]
+            data_catalog_out[column_names[9]] = nature_array[9]
+            data_catalog_out['object_nature'] =  average_nature
+        else:
+            data_catalog_out.add_column(table.Column(data = nature_array[0], name = column_names[0], dtype = 'float64'))
+            data_catalog_out.add_column(table.Column(data = nature_array[1], name = column_names[1], dtype = 'float64'))
+            data_catalog_out.add_column(table.Column(data = nature_array[2], name = column_names[2], dtype = 'float64'))
+            data_catalog_out.add_column(table.Column(data = nature_array[3], name = column_names[3], dtype = 'float64'))
+            data_catalog_out.add_column(table.Column(data = nature_array[4], name = column_names[4], dtype = 'float64'))
+            data_catalog_out.add_column(table.Column(data = nature_array[5], name = column_names[5], dtype = 'float64'))
+            data_catalog_out.add_column(table.Column(data = nature_array[6], name = column_names[6], dtype = 'float64'))
+            data_catalog_out.add_column(table.Column(data = nature_array[7], name = column_names[7], dtype = 'float64'))
+            data_catalog_out.add_column(table.Column(data = nature_array[8], name = column_names[8], dtype = 'float64'))
+            data_catalog_out.add_column(table.Column(data = nature_array[9], name = column_names[9], dtype = 'float64'))
+            data_catalog_out.add_column(table.Column(data =  average_nature, name = 'object_nature', dtype = 'float64'))
 
         # If there are any nan's make them 0.5
         data_catalog_out['object_nature'][np.isnan(flot(data_catalog_out['object_nature']))] = 0.5
@@ -1193,7 +1341,7 @@ def get_separation(ra_deg, dec_deg, data_catalog):
         dec_gaia = flot(data_catalog['DE_ICRS_gaia'])
 
         # Which objects are in Gaia
-        in_gaia = np.where(np.isfinite(ra_gaia))
+        calculate_coincidence = np.where(np.isfinite(ra_gaia))
 
         # Replace values
         ra_objects [in_gaia] = ra_gaia [in_gaia]
@@ -1410,7 +1558,7 @@ classification_catalog = table.Table.read(classification_catalog_filename, forma
 clear_stars            = np.array(classification_catalog['Nature']) == 0.0
 clear_galaxy           = np.array(classification_catalog['Nature']) == 1.0
 
-def catalog_operations(object_name, data_catalog_out, ra_deg, dec_deg, Pcc_filter = 'i', Pcc_filter_alternative = 'r', neighbors = 20, recalculate_nature = False):
+def catalog_operations(object_name, data_catalog_out, ra_deg, dec_deg, Pcc_filter = 'i', Pcc_filter_alternative = 'r', neighbors = 20, recalculate_nature = False, catalog_exists = False):
     '''
     Perform basic operations on the catalog related to the transient.
 
@@ -1425,6 +1573,7 @@ def catalog_operations(object_name, data_catalog_out, ra_deg, dec_deg, Pcc_filte
                              as an acceptable alternative.
     neighbors              : How many neighbors to consider when classifying the objects
     recalculate_nature     : Overwrite existing Nature column?
+    catalog_exists         : Whether or not the current catalog was read in
 
     Return
     ---------------
@@ -1441,7 +1590,7 @@ def catalog_operations(object_name, data_catalog_out, ra_deg, dec_deg, Pcc_filte
     z_correct = np.array([extinction.ccm89(np.array([8897.10]), i * R_V, R_V)[0] for i in E_BV])
     y_correct = np.array([extinction.ccm89(np.array([9603.10]), i * R_V, R_V)[0] for i in E_BV])
 
-    if 'gKronMag_3pi' in data_catalog_out.colnames:
+    if ('gKronMag_3pi' in data_catalog_out.colnames) & (catalog_exists == False):
         data_catalog_out['gKronMag_3pi'] = flot(data_catalog_out['gKronMag_3pi']) - g_correct
         data_catalog_out['rKronMag_3pi'] = flot(data_catalog_out['rKronMag_3pi']) - r_correct
         data_catalog_out['iKronMag_3pi'] = flot(data_catalog_out['iKronMag_3pi']) - i_correct
@@ -1453,7 +1602,7 @@ def catalog_operations(object_name, data_catalog_out, ra_deg, dec_deg, Pcc_filte
         data_catalog_out['zPSFMag_3pi' ] = flot(data_catalog_out['zPSFMag_3pi' ]) - z_correct
         data_catalog_out['yPSFMag_3pi' ] = flot(data_catalog_out['yPSFMag_3pi' ]) - y_correct
 
-    if 'psfMag_u_sdss' in data_catalog_out.colnames:
+    if ('psfMag_u_sdss' in data_catalog_out.colnames) & (catalog_exists == False):
         data_catalog_out['psfMag_u_sdss'  ] = flot(data_catalog_out['psfMag_u_sdss'  ]) - g_correct
         data_catalog_out['psfMag_g_sdss'  ] = flot(data_catalog_out['psfMag_g_sdss'  ]) - r_correct
         data_catalog_out['psfMag_r_sdss'  ] = flot(data_catalog_out['psfMag_r_sdss'  ]) - i_correct
@@ -1478,9 +1627,15 @@ def catalog_operations(object_name, data_catalog_out, ra_deg, dec_deg, Pcc_filte
     data_catalog.add_column(table.Column(data = halflight_radius  , name = 'halflight_radius'   , dtype = 'float64'))
     data_catalog.add_column(table.Column(data = chance_coincidence, name = 'chance_coincidence' , dtype = 'float64'))
 
+    # Get host's g and r mags
+    hosts_magnitudes_g, halflight_radius_g, chance_coincidence_g = mag_size_coincidence(data_catalog, separation, 'g', 'g')
+    hosts_magnitudes_r, halflight_radius_r, chance_coincidence_r = mag_size_coincidence(data_catalog, separation, 'r', 'r')
+    data_catalog.add_column(table.Column(data = hosts_magnitudes_g, name = 'host_magnitude_g', dtype = 'float64'))
+    data_catalog.add_column(table.Column(data = hosts_magnitudes_r, name = 'host_magnitude_r', dtype = 'float64'))
+
     return data_catalog
 
-def get_best_host(data_catalog, star_separation = 1, star_cut = 0.1):
+def get_best_host(data_catalog, star_separation = 1, star_cut = 0.1, force_host = np.nan):
     '''
     From a list of objects, find the best host for a given transient,
     based on the probability of chance coincidence. Rulling out stars.
@@ -1490,6 +1645,7 @@ def get_best_host(data_catalog, star_separation = 1, star_cut = 0.1):
     data_catalog    : Astropy table with data 
     star_separation : A star needs to be this close [in Arcsec]
     star_cut        : maximum allowed probability of being a star
+    force_host      : host index to force the answer
 
     Return
     ---------------
@@ -1501,26 +1657,57 @@ def get_best_host(data_catalog, star_separation = 1, star_cut = 0.1):
     best_host         : Index of best host
     '''
     
-    # If it's close and starry, pick that one
-    stars = np.where((data_catalog['separation'] < star_separation) & (data_catalog['object_nature'] <= star_cut))[0]
-    if len(stars) > 0:
-        best_host = stars[0]
+    force_detection = False
+
+    if np.isnan(force_host):
+        # If it's close and starry, pick that one
+        stars = np.where((data_catalog['separation'] < star_separation) & (data_catalog['object_nature'] <= star_cut))[0]
+        if len(stars) > 0:
+            best_host = stars[0]
+        else:
+            # Else, pick the one with the lowest Pcc that is a galaxy
+            galaxies_catalog = data_catalog[data_catalog['object_nature'] > star_cut]
+            if len(galaxies_catalog) == 0:
+                return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+
+            best_Pcc = np.min(galaxies_catalog['chance_coincidence'])
+
+            # Make Step function in P_cc association
+            best_host = np.where(data_catalog['chance_coincidence'] == best_Pcc)[0][0]
+            best_sepa = flot(data_catalog['separation'])[best_host]
+            if (best_sepa > 8) & (best_Pcc > 0.02):
+                close_Pcc = galaxies_catalog['chance_coincidence'][galaxies_catalog['separation'] <= 8]
+                if sum(close_Pcc < 0.07) > 0:
+                    best_Pcc = np.min(close_Pcc)
+
+            # Overwrite with bright SDSS objects
+            if 'modelMag_r_sdss' in galaxies_catalog.colnames:
+                bright = (data_catalog['modelMag_r_sdss'] < 16) & (data_catalog['type_sdss'] != 6) & (data_catalog['object_nature'] != 0)
+                if sum(bright) > 0:
+                    min_Pcc_index = np.argmin(data_catalog['chance_coincidence'][bright])
+                    min_Pcc = data_catalog['chance_coincidence'][bright][min_Pcc_index]
+                    best_sepa = flot(data_catalog['separation'])[bright][min_Pcc_index]
+                    # If the bright object is not definitely the host, skip
+                    if (min_Pcc < 0.02):
+                        best_Pcc = min_Pcc
+                        force_detection = True
+
+            # Get the index of the best host
+            best_host = np.where(data_catalog['chance_coincidence'] == best_Pcc)[0][0]
     else:
-        # Else, pick the one with the lowest Pcc that is a galaxy
-        galaxies_catalog = data_catalog[data_catalog['object_nature'] > star_cut]
-        if len(galaxies_catalog) == 0:
-            return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
-        best_Pcc  = np.min(galaxies_catalog['chance_coincidence'])
-        best_host = np.where(data_catalog['chance_coincidence'] == best_Pcc)[0][0]
+        best_host = force_host
+        if np.isfinite(force_host): force_detection = True
 
     # Properties of the best host
-    host_radius     = flot(data_catalog['halflight_radius'   ])[best_host]
-    host_separation = flot(data_catalog['separation'         ])[best_host]
-    host_ra         = flot(data_catalog['ra_matched'         ])[best_host]
-    host_dec        = flot(data_catalog['dec_matched'        ])[best_host]
-    host_Pcc        = flot(data_catalog['chance_coincidence' ])[best_host]
-    host_magnitude  = flot(data_catalog['effective_magnitude'])[best_host]
-    host_nature     = flot(data_catalog['object_nature'      ])[best_host]
+    host_radius      = flot(data_catalog['halflight_radius'   ])[best_host]
+    host_separation  = flot(data_catalog['separation'         ])[best_host]
+    host_ra          = flot(data_catalog['ra_matched'         ])[best_host]
+    host_dec         = flot(data_catalog['dec_matched'        ])[best_host]
+    host_Pcc         = flot(data_catalog['chance_coincidence' ])[best_host]
+    host_magnitude   = flot(data_catalog['effective_magnitude'])[best_host]
+    host_nature      = flot(data_catalog['object_nature'      ])[best_host]
+    host_magnitude_g = flot(data_catalog['host_magnitude_g'   ])[best_host]
+    host_magnitude_r = flot(data_catalog['host_magnitude_r'   ])[best_host]
 
     if 'z_sdss' in data_catalog.colnames:
         photoz          = data_catalog['z_sdss'][best_host]
@@ -1530,7 +1717,7 @@ def get_best_host(data_catalog, star_separation = 1, star_cut = 0.1):
     else:
         photoz = photoz_err = specz = specz_err = np.nan
 
-    return host_radius, host_separation, host_ra, host_dec, host_Pcc, host_magnitude, host_nature, photoz, photoz_err, specz, specz_err, best_host
+    return host_radius, host_separation, host_ra, host_dec, host_Pcc, host_magnitude, host_magnitude_g, host_magnitude_r, host_nature, photoz, photoz_err, specz, specz_err, best_host, force_detection
 
 # Extinction
 def get_extinction(ra_deg, dec_deg, dust_map = 'SFD'):

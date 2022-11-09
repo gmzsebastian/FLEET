@@ -591,6 +591,8 @@ def get_transient_info(object_name_in = '', ra_in = '', dec_in = '', object_clas
         if (transient_source == 'TNS') & (tns_name == '--'):
             tns_name = object_name
 
+    if object_class == '': object_class = '--'
+
     return ra_deg, dec_deg, transient_source, object_name, ztf_data, ztf_name, tns_name, object_class, osc_data
 
 def ignore_data(object_name, output_table):
@@ -726,14 +728,14 @@ def generate_lightcurve(ztf_data, osc_data, object_name = '--', ztf_name = '--',
     flot = lambda x : np.array(x).astype(float)
     if (ztf_name != '--') & ('ZTF' not in ztf_name): ztf_name = 'ZTF' + ztf_name
     # Concatenate and format all tables
-    all_times      = np.concatenate([flot(osc_data['OSC_MJD'])           , flot(my_data['MJD'])                , flot(ztf_data['ZTF_MJD'])        ])
-    all_mags       = np.concatenate([flot(osc_data['OSC_Mag'])           , flot(my_data['Mag'])                , flot(ztf_data['ZTF_PSF'])        ])
-    all_magerrs    = np.concatenate([flot(osc_data['OSC_Magerr'])        , flot(my_data['MagErr'])             , flot(ztf_data['ZTF_PSFerr'])     ])
-    all_telescopes = np.concatenate([np.array(osc_data['OSC_telescope']) , np.array(my_data['Telescope'])      , ['ZTF'] * ztf_len                ]).astype('str')
-    all_filters    = np.concatenate([np.array(osc_data['OSC_filter'])    , np.array(my_data['Filter'])         , np.array(ztf_data['ZTF_filter']) ]).astype('str')
-    all_sources    = np.concatenate([['OSC'] * osc_len                   , ['Local'] * my_len                  , ['ZTF'] * ztf_len                ]).astype('str')
-    upperlims      = np.concatenate([np.array(osc_data['OSC_UL'])        , np.array(my_data['UL'])             , np.array(ztf_data['ZTF_PSFerr']) ]).astype('str')
-    all_ignores    = np.concatenate([['False'] * osc_len                 , np.array(my_data['Ignore'])         , ['False'] * ztf_len              ])
+    all_times      = np.concatenate([flot(osc_data['OSC_MJD'])           , flot(my_data['MJD'])           , flot(ztf_data['ZTF_MJD'])        ])
+    all_mags       = np.concatenate([flot(osc_data['OSC_Mag'])           , flot(my_data['Mag'])           , flot(ztf_data['ZTF_PSF'])        ])
+    all_magerrs    = np.concatenate([flot(osc_data['OSC_Magerr'])        , flot(my_data['MagErr'])        , flot(ztf_data['ZTF_PSFerr'])     ])
+    all_telescopes = np.concatenate([np.array(osc_data['OSC_telescope']) , np.array(my_data['Telescope']) , ['ZTF'] * ztf_len                ]).astype('str')
+    all_filters    = np.concatenate([np.array(osc_data['OSC_filter'])    , np.array(my_data['Filter'])    , np.array(ztf_data['ZTF_filter']) ]).astype('str')
+    all_sources    = np.concatenate([['OSC'] * osc_len                   , ['Local'] * my_len             , ['ZTF'] * ztf_len                ]).astype('str')
+    upperlims      = np.concatenate([np.array(osc_data['OSC_UL'])        , np.array(my_data['UL'])        , np.array(ztf_data['ZTF_PSFerr']) ]).astype('str')
+    all_ignores    = np.concatenate([['False'] * osc_len                 , np.array(my_data['Ignore'])    , ['False'] * ztf_len              ])
 
     # Create output Table
     all_upperlims   = np.array([i in [True, -1.0, 'True', '-1', '-1.0', '-1.', b'True', b'-1', b'-1.0', b'-1.', 'T'] for i in upperlims])
