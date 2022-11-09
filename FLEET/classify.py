@@ -601,8 +601,8 @@ def predict_Host(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
 
     # Output Array
     info_data  = np.array([object_name, ztf_name, tns_name, object_class, ra_deg, dec_deg, host_radius, host_separation, host_ra, host_dec, host_Pcc, host_magnitude, host_nature, photoz, photoz_err, specz, specz_err, use_redshift, redshift_label])
-    info_names = ['object_name'       ,'ztf_name'             ,'tns_name'             ,'object_class'         ,'ra_deg'               ,'dec_deg'              ,'host_radius'          ,'host_separation'      ,'host_ra'              ,'host_dec'          ,'host_Pcc'           ,'host_magnitude',
-                  'host_nature'       ,'photoz'               ,'photoz_err'           ,'specz'                ,'specz_err'            ,'use_redshift'         ,'redshift_label']
+    info_names = ['object_name'     ,'ztf_name'             ,'tns_name'             ,'object_class'         ,'ra_deg'               ,'dec_deg'              ,'host_radius'          ,'host_separation'      ,'host_ra'              ,'host_dec'          ,'host_Pcc'           ,'host_magnitude',
+                  'host_nature'     ,'photoz'               ,'photoz_err'           ,'specz'                ,'specz_err'            ,'use_redshift'         ,'redshift_label']
     info_table = table.Table(info_data, names = info_names)
 
     # Dummy Light Curve Table
