@@ -206,7 +206,7 @@ def get_ztf_name_lightcurve(ra_deg, dec_deg, acceptance_radius = 3, import_ZTF =
     '''
 
     # Empty Table
-    ztf_data = table.Table(names = ['ZTF_MJD', 'ZTF_PSF', 'ZTF_PSFerr', 'ZTF_filter'])
+    ztf_data = table.Table(names = ['ZTF_MJD', 'ZTF_PSF', 'ZTF_PSFerr', 'ZTF_RA', 'ZTF_DEC', 'ZTF_filter'])
     ztf_name = '--'
 
     # Read in local ZTF data if it exists
@@ -264,11 +264,11 @@ def get_ztf_name_lightcurve(ra_deg, dec_deg, acceptance_radius = 3, import_ZTF =
             object_name = objects['oid'][0]
             det = client.query_detections(object_name, format="pandas")
             if len(det) > 0:
-                output_data = table.Table.from_pandas(det)['mjd', 'magpsf', 'sigmapsf', 'fid']
+                output_data = table.Table.from_pandas(det)['mjd', 'magpsf', 'sigmapsf', 'ra', 'dec', 'fid']
 
                 # Convert to Astropy Table
-                column_names = ['ZTF_MJD', 'ZTF_PSF', 'ZTF_PSFerr', 'ZTF_filter']
-                ztf_data = table.Table(rows = output_data, names = column_names, dtype = ['float64', 'float64', 'float64', 'S25'])
+                column_names = ['ZTF_MJD', 'ZTF_PSF', 'ZTF_PSFerr', 'ZTF_RA', 'ZTF_DEC', 'ZTF_filter']
+                ztf_data = table.Table(rows = output_data, names = column_names, dtype = ['float64', 'float64', 'float64', 'float64', 'float64', 'S25'])
                 ztf_data['ZTF_filter'][ztf_data['ZTF_filter'] == '1'] = 'g'
                 ztf_data['ZTF_filter'][ztf_data['ZTF_filter'] == '2'] = 'r'
 
@@ -489,7 +489,7 @@ def get_transient_info(object_name_in = '', ra_in = '', dec_in = '', object_clas
 
     # Empty variables
     osc_data = table.Table(names = ['OSC_MJD', 'OSC_Mag', 'OSC_Magerr', 'OSC_filter', 'OSC_UL', 'OSC_telescope'])
-    ztf_data = table.Table(names = ['ZTF_MJD', 'ZTF_PSF', 'ZTF_PSFerr', 'ZTF_filter'])
+    ztf_data = table.Table(names = ['ZTF_MJD', 'ZTF_PSF', 'ZTF_PSFerr', 'ZTF_RA', 'ZTF_DEC', 'ZTF_filter'])
 
     ###### If there are no coordinates, but only a name ######
 
@@ -707,8 +707,12 @@ def generate_lightcurve(ztf_data, osc_data, object_name = '--', ztf_name = '--',
             return
         else:
             try:
-                output_types=['float64','float64','float64','S25','S25','S25','S25','S25']
-                output_table = table.Table(table.Table.read(exists[0], format='ascii', guess=False), dtype = output_types)
+                try:
+                    output_types=['float64','float64','float64','S25','S25','S25','S25','S25','float64','float64']
+                    output_table = table.Table(table.Table.read(exists[0], format='ascii', guess=False), dtype = output_types)
+                except:
+                    output_types=['float64','float64','float64','S25','S25','S25','S25','S25']
+                    output_table = table.Table(table.Table.read(exists[0], format='ascii', guess=False), dtype = output_types)
             except:
                 output_types=['float64','float64','float64','S25','S25','S25','S25','S25','S25','S25','S25','S25']
                 output_table = table.Table(table.Table.read(exists[0], format='ascii', guess=False), dtype = output_types)
@@ -716,8 +720,8 @@ def generate_lightcurve(ztf_data, osc_data, object_name = '--', ztf_name = '--',
         return output_table
 
     # Combined Table Parameters
-    output_names = ['MJD'    , 'Mag'    , 'MagErr' , 'Telescope', 'Filter', 'Source', 'UL' , 'Ignore']
-    output_types = ['float64', 'float64', 'float64', 'S25'      , 'S25'   , 'S25'   , 'S25', 'S25'   ]
+    output_names = ['MJD'    , 'Mag'    , 'MagErr' , 'Telescope', 'Filter', 'Source', 'UL' , 'Ignore', 'RA'     , 'DEC'    ]
+    output_types = ['float64', 'float64', 'float64', 'S25'      , 'S25'   , 'S25'   , 'S25', 'S25'   , 'float64', 'float64']
 
     # Import my data if it exists
     my_data = import_my_data(object_name, import_local)
@@ -736,10 +740,12 @@ def generate_lightcurve(ztf_data, osc_data, object_name = '--', ztf_name = '--',
     all_sources    = np.concatenate([['OSC'] * osc_len                   , ['Local'] * my_len             , ['ZTF'] * ztf_len                ]).astype('str')
     upperlims      = np.concatenate([np.array(osc_data['OSC_UL'])        , np.array(my_data['UL'])        , np.array(ztf_data['ZTF_PSFerr']) ]).astype('str')
     all_ignores    = np.concatenate([['False'] * osc_len                 , np.array(my_data['Ignore'])    , ['False'] * ztf_len              ])
+    all_ras        = np.concatenate([[np.nan] * osc_len                  , [np.nan] * my_len              , flot(ztf_data['ZTF_RA'])         ])
+    all_decs       = np.concatenate([[np.nan] * osc_len                  , [np.nan] * my_len              , flot(ztf_data['ZTF_DEC'])        ])
 
     # Create output Table
     all_upperlims   = np.array([i in [True, -1.0, 'True', '-1', '-1.0', '-1.', b'True', b'-1', b'-1.0', b'-1.', 'T'] for i in upperlims])
-    output_columns  = [all_times , all_mags  , all_magerrs , all_telescopes , all_filters , all_sources , all_upperlims, all_ignores]
+    output_columns  = [all_times , all_mags  , all_magerrs , all_telescopes , all_filters , all_sources , all_upperlims, all_ignores, all_ras, all_decs]
     output_table_in = table.Table(data = np.array(output_columns).T, names = output_names, dtype = output_types)
 
     # Remove bad lines with no useful data

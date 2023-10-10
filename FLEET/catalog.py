@@ -1668,7 +1668,7 @@ def get_best_host(data_catalog, star_separation = 1, star_cut = 0.1, force_host 
             # Else, pick the one with the lowest Pcc that is a galaxy
             galaxies_catalog = data_catalog[data_catalog['object_nature'] > star_cut]
             if len(galaxies_catalog) == 0:
-                return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+                return np.nan, np.nan, np.nan, np.nan, 1, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 0, force_detection
 
             best_Pcc = np.min(galaxies_catalog['chance_coincidence'])
 
