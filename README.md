@@ -18,7 +18,17 @@ In order to use FLEET you will need to have two keys in your system. One to quer
 /Users/username/3PI_key.txt
 /Users/username/tns_key.txt
 ```
-You can request one from https://mastweb.stsci.edu/ps1casjobs/home.aspx and https://wis-tns.weizmann.ac.il/, respectively.
+You can request a 3PI key from https://mastweb.stsci.edu/ps1casjobs/home.aspx, and save it with the following format:
+```
+123123123123 mypassword
+```
+Additionally, you can request one from  and https://wis-tns.weizmann.ac.il/ and save it with this format:
+```
+123abc123abc123abc123abc123abc
+12345
+bot_name
+```
+Where the long number if the API key, `12345` represents the TNS ID, and the `bot_name` is the TNS username or bot name.
 
 FLEET needs dust maps to calculate the extinction to each target, for that you will need to install `dustmaps`, in the terminal install through pip:
 
