@@ -55,7 +55,7 @@ Finally, you will need to generate `pickle` files that have the trained algorith
 `export fleet_data='/path/to/store/fleet_data'`
 Then to generate the pickle files and store them in this folder run the following
 ```
-from FLEET.classify import save_pickle
+from FLEET.classify import save_pickles
 save_pickles()
 ```
 _Note that right now the `save_pickles()` function is extremely specfic and will only generate the files required to run `predict_SLSN(classifier = 'all')`_
