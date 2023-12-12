@@ -642,7 +642,6 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
 
         # Rapid TDE classifier
         filenames_tde = os.path.join(fleet_data, 'tde_rapid_*.pkl')
-        filenames_tde = '/Volumes/Dropbox/Dropbox/github/FLEET/FLEET/pickles/tde_rapid_*.pkl'
         full_filenames_tde = glob.glob(filenames_tde)
 
         for i in range(len(full_filenames_tde)):
