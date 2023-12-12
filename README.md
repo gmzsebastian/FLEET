@@ -11,9 +11,8 @@ The paper describing the first two years of operations can be found at https://a
 
 The current version found in this repository is an unofficial version of the FLEET 2.0 algorithm described in https://arxiv.org/abs/2210.10810, the final FLEET 2.0 version will be released upon acceptance of this manuscript.
 
-# Setup
-In order to use FLEET you will need to have two keys in your system. One to query 3PI, and one to query the TNS. FLEET will search for these files in your home directory:
-
+# Installation
+You can install the code in this repository from source `python setup.py install`. Before running FLEET you will need to have two keys in your system, one to query 3PI and one to query TNS. FLEET will search for these in your home directory, with paths like these:
 ```
 /Users/username/3PI_key.txt
 /Users/username/tns_key.txt
@@ -22,21 +21,21 @@ You can request a 3PI key from https://mastweb.stsci.edu/ps1casjobs/home.aspx, a
 ```
 123123123123 mypassword
 ```
-Additionally, you can request one from  and https://wis-tns.weizmann.ac.il/ and save it with this format:
+You can request one from  and https://wis-tns.weizmann.ac.il/ and save it with this format:
 ```
 123abc123abc123abc123abc123abc
 12345
 bot_name
 ```
-Where the long number if the API key, `12345` represents the TNS ID, and the `bot_name` is the TNS username or bot name.
+The long number is the API key, `12345` is the TNS ID, and the `bot_name` is the TNS username or bot name.
 
-FLEET needs dust maps to calculate the extinction to each target, for that you will need to install `dustmaps`, in the terminal install through pip:
+FLEET also needs dust maps to calculate the extinction at the coordinates of each target, for that you will need to install `dustmaps`. First install the package using `pip`.
 
 ```
 pip install dustmaps
 ```
 
-And then inside Python import the necessary dust maps and install them in whichever directory your prefer.
+Afterwards, you can install the necessary dust maps in the directory of your choice.
 
 ```
 from dustmaps.config import config
@@ -46,11 +45,20 @@ import dustmaps.sfd
 dustmaps.sfd.fetch()
 ```
 
-You will also need `mastcasjobs`, it should be installed automatically, but if it doesn't you need to install these two modules:
+The `mastcasjobs` repositories should be installed automatically when installing FLEET, but if they do not you can manually install them from source with `pip`:
 ```	
 pip install git+git://github.com/dfm/casjobs@master	
 pip install git+git://github.com/rlwastro/mastcasjobs@master	
 ```	
+
+Finally, you will need to generate `pickle` files that have the trained algorithms used for predicting transient classes. This is to prevent FLEET from having to re-train the algorithm every time it runs. To do this you need to define `fleet_data` in your `bash_profile`. You can edit your `~\.bash_profile` file and add this line:
+`export fleet_data='/path/to/store/fleet_data'`
+Then to generate the pickle files and store them in this folder run the following
+```
+from FLEET.classify import save_pickle()
+save_pickles()
+```
+_Note that right now the `save_pickles()` function is extremely specfic and will only generate the files required to run `predict_SLSN(classifier = 'all')`_
 
 # Example
 Assuming you have your 3PI and TNS keys set up, simply run the `main_assess` function on the transient of your choice.
