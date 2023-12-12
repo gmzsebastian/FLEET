@@ -11,6 +11,136 @@ import pickle
 import glob
 import os
 
+fleet_data = os.environ['fleet_data']
+
+def create_pickle(training_days, grouping, SMOTE_state, n_estimators, max_depth, clf_state, sorting_state, features, model, clean, prefix):
+    print('Creating Pickle', training_days, grouping, SMOTE_state, n_estimators, max_depth, clf_state, sorting_state, features, model, clean, prefix)
+
+    table_name0 = pkg_resources.resource_filename(__name__, 'training_set/center_table_%s_single.txt'%training_days)
+    table_name1 = pkg_resources.resource_filename(__name__, 'training_set/center_table_%s_double.txt'%training_days)
+    
+    # Import Data
+    if model == 0:
+        training_table_in = table.Table.read(table_name0, format = 'ascii')
+    elif model == 1:
+        training_table_in = table.Table.read(table_name1, format = 'ascii')
+
+    # Shuffle Order of Table
+    order = np.arange(len(training_table_in))
+    np.random.seed(sorting_state)
+    np.random.shuffle(order)
+
+    # Randomize Order of training set
+    training_table = training_table_in[order]
+
+    # Select Only Transients with host detections
+    if clean == 0:
+        clean_training = training_table[np.isfinite(training_table['red_amplitude']) & np.isfinite(training_table['host_Pcc'])]
+    if clean == 1:
+        clean_training = training_table[np.isfinite(training_table['red_amplitude']) & np.isfinite(training_table['host_Pcc']) & (training_table['input_separation'] > 0)]
+
+    # Select Features
+    if features == 1 : use_features = ['red_amplitude','green_amplitude','host_Pcc','host_nature','input_host_g_r','normal_separation','model_color','late_color20','chi2','delta_time','deltamag_red','deltamag_green'] # Every Feature
+
+    # For SLSNe - Late time
+    if features == 2 : use_features = ['red_amplitude','green_amplitude','host_Pcc'              ,'input_host_g_r','normal_separation','model_color','late_color20'                    ,'deltamag_red','deltamag_green'] # Optimal Features for SLSNe
+    if features == 3 : use_features = [                                  'host_Pcc'              ,'input_host_g_r','normal_separation'                                                 ,'deltamag_red','deltamag_green'] # Optimal Host-only Features for SLSNe
+    if features == 4 : use_features = ['red_amplitude','green_amplitude'                                                              ,'model_color','late_color20','chi2'                                             ] # Optimal Lightcurve-only Features for SLSNe
+
+    # For SLSNe - Rapid
+    if features == 5 : use_features = ['red_amplitude','green_amplitude','host_Pcc'              ,'input_host_g_r','normal_separation','model_color'                      ,'delta_time','deltamag_red','deltamag_green'] # Optimal Features for SLSNe - rapid
+    if features == 6 : use_features = [                                  'host_Pcc'              ,'input_host_g_r','normal_separation'                                    ,'delta_time','deltamag_red','deltamag_green'] # Optimal Host-only Features for SLSNe - rapid
+    if features == 7 : use_features = ['red_amplitude','green_amplitude'                                                              ,'model_color'               ,'chi2','delta_time'                                ] # Optimal Lightcurve-only Features for SLSNe - rapid
+
+    # Add Amplitude 2 to double models
+    if model == 1:
+        use_features += ['red_amplitude2','green_amplitude2']
+
+    # Create array with Training and Testing data
+    training_data = np.array(clean_training[use_features].to_pandas())
+
+    # Names and Classes
+    training_class_in = np.array(clean_training['object_class'])
+
+    if grouping == 11:
+        training_class_in[np.where(training_class_in == 'LBV'    )] = 'Star'
+        training_class_in[np.where(training_class_in == 'Varstar')] = 'Star'
+        training_class_in[np.where(training_class_in == 'CV'     )] = 'Star'
+        training_class_in[np.where(training_class_in == 'SNIbn'  )] = 'SNIbc'
+        training_class_in[np.where(training_class_in == 'SNIb'   )] = 'SNIbc'
+        training_class_in[np.where(training_class_in == 'SNIbc'  )] = 'SNIbc'
+        training_class_in[np.where(training_class_in == 'SNIc'   )] = 'SNIbc'
+        training_class_in[np.where(training_class_in == 'SNIc-BL')] = 'SNIbc'
+        training_class_in[np.where(training_class_in == 'SNII'   )] = 'SNII'
+        training_class_in[np.where(training_class_in == 'SNIIP'  )] = 'SNII'
+
+        classes_names = {'AGN'     : 0, 'SLSN-I' : 1, 'SLSN-II' : 2, 'SNII'    : 3, 'SNIIb'   : 4,
+                         'SNIIn'   : 5, 'SNIa'   : 6, 'SNIbc'   : 7, 'Star'    : 8, 'TDE'     : 9}
+
+    # Transform classes into numbers
+    training_class = np.array([classes_names[i] for i in training_class_in]).astype(int)
+
+    # SMOTE the data
+    sampler = SMOTE(random_state=SMOTE_state)
+    data_train_smote, class_train_smote = sampler.fit_resample(training_data, training_class)
+
+    # Train Random Forest Classifier
+    clf = RandomForestClassifier(n_estimators=n_estimators, max_depth=max_depth, random_state=clf_state)
+    clf.fit(data_train_smote, class_train_smote)
+
+    pickle_name = f'{prefix}_{training_days}_{grouping}_{SMOTE_state}_{n_estimators}_{max_depth}_{clf_state}_{sorting_state}_{features}_{model}_{clean}.pkl'
+    filename = os.path.join(fleet_data, pickle_name)
+
+    with open(filename,'wb') as f:
+        pickle.dump(clf,f)
+
+def save_pickles():
+    '''
+    Dummy default function to save the necessary pickle files for FLEET
+    '''
+
+    # Shared Parameters
+    sorting_states = np.array([38,39,40,41,42])
+    clean          = 0
+    grouping       = 11
+    n_estimators   = 100
+
+    # Main late-time
+    training_days  = 75
+    max_depth      = 15
+    featuress      = [2]
+    model          = 1
+
+    for state in sorting_states:
+        for features in featuress:
+            create_pickle(training_days, grouping, state, n_estimators, max_depth, state, state, features, model, clean, 'main_late')
+
+    # SLSNe Rapid
+    training_days  = 15
+    max_depth      = 20
+    featuress      = [5]
+    model          = 0
+
+    for state in sorting_states:
+        for features in featuress:
+            create_pickle(training_days, grouping, state, n_estimators, max_depth, state, state, features, model, clean, 'slsn_rapid')
+
+    # TDE Rapid
+    training_days  = 20
+    grouping       = 11
+    SMOTE_states   = np.array([38,39,40,41,42])
+    n_estimators   = 100
+    max_depth      = 20
+    sorting_states = np.array([38,39,40,41,42]) # same as clf_state
+    featuress      = np.array([5]) # Main, host only, phot only
+    model          = 0
+    clean          = 0
+
+    for state in sorting_states:
+        for features in featuress:
+            create_pickle(training_days, grouping, state, n_estimators, max_depth, state, state, features, model, clean, 'tde_rapid')
+
+
 def create_features(acceptance_radius,import_ZTF,import_OSC,import_local,import_lightcurve,reimport_catalog,search_radius,Pcc_filter,Pcc_filter_alternative,star_separation,star_cut,
                     date_range,late_phase,n_walkers,n_steps,n_cores,model,training_days,sorting_state,clean,SMOTE_state,clf_state,n_estimators,max_depth,feature_set,neighbors,
                     recalculate_nature,classifier,n_samples,plot_lightcurve,do_observability,save_features,ra_deg, dec_deg, transient_source, object_name, object_name_in,
@@ -483,8 +613,8 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
     print('Classifying ...')
     if classifier == 'all':
         # Late-time classifier
-        filenames_main = f'pickles/main_late_*.pkl'
-        full_filenames_main = glob.glob(pkg_resources.resource_filename(__name__, filenames_main))
+        filenames_main = os.path.join(fleet_data, 'main_late_*.pkl')
+        full_filenames_main = glob.glob(filenames_main)
 
         for i in range(len(full_filenames_main)):
             filename = full_filenames_main[i]
@@ -497,8 +627,8 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
         late_probability_std     = np.std    (late_probability, axis = 0)
 
         # Rapid SLSN classifier
-        filenames_slsn = f'pickles/slsn_rapid_*.pkl'
-        full_filenames_slsn = glob.glob(pkg_resources.resource_filename(__name__, filenames_slsn))
+        filenames_slsn = os.path.join(fleet_data, 'slsn_rapid_*.pkl')
+        full_filenames_slsn = glob.glob(filenames_slsn)
 
         for i in range(len(full_filenames_slsn)):
             filename = full_filenames_slsn[i]
@@ -511,8 +641,9 @@ def predict_SLSN(object_name_in = '', ra_in = '', dec_in = '', redshift = np.nan
         quick_probability_std     = np.std    (quick_probability, axis = 0)
 
         # Rapid TDE classifier
-        filenames_tde = f'pickles/tde_rapid_*.pkl'
-        full_filenames_tde = glob.glob(pkg_resources.resource_filename(__name__, filenames_tde))
+        filenames_tde = os.path.join(fleet_data, 'tde_rapid_*.pkl')
+        filenames_tde = '/Volumes/Dropbox/Dropbox/github/FLEET/FLEET/pickles/tde_rapid_*.pkl'
+        full_filenames_tde = glob.glob(filenames_tde)
 
         for i in range(len(full_filenames_tde)):
             filename = full_filenames_tde[i]
