@@ -222,10 +222,17 @@ def make_nan(catalog, replace = np.nan):
     into a single aunified value specified by 'replace'
     '''
 
+    # Replace values with empty 9999's
+    catalog = catalog.filled(fill_value = 9999)
+
     for i in range(len(catalog)):
         for j in catalog[i].colnames:
-            if str(catalog[i][j]) in [False, 'False', '', '-999', '-999.0', '--', 'n', '-9999.0', 'nan', b'']:
-                catalog[i][j] = replace
+            if str(catalog[i][j]) in [False, '9999', '9999.0', 'False', '', '-999', '-999.0', '--', 'n', '-9999.0', 'nan', b'']:
+                try:
+                    catalog[i][j] = replace
+                except:
+                    catalog[j] = catalog[j].astype('float')
+                    catalog[i][j] = replace
 
     return catalog
 
