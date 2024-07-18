@@ -395,6 +395,12 @@ def query_SDSS(ra_deg, dec_deg, search_radius = 1.0, timeout=60.0):
             catalog_SDSS['z1'] = table.Column(np.nan * np.ones(len(catalog_SDSS)))
             catalog_SDSS['zErr1'] = table.Column(np.nan * np.ones(len(catalog_SDSS)))
 
+        # For float format
+        catalog_SDSS['z'] = catalog_SDSS['z'].astype('float')
+        catalog_SDSS['zErr'] = catalog_SDSS['zErr'].astype('float')
+        catalog_SDSS['z1'] = catalog_SDSS['z1'].astype('float')
+        catalog_SDSS['zErr1'] = catalog_SDSS['zErr1'].astype('float')
+
         # Clean up SDSS's empty cells
         catalog_SDSS = make_nan(catalog_SDSS)
 
