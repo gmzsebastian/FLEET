@@ -279,7 +279,7 @@ def query_3pi(ra_deg, dec_deg, search_radius = 1.0):
     FROM fGetNearbyObjEq(%s, %s, %s) nb
     INNER JOIN ObjectThin o on o.objid=nb.objid
     INNER JOIN StackObjectThin m on o.objid=m.objid
-    LEFT JOIN HLSP_PS1_PSC.pointsource_scores psc on o.objid=psc.objid
+    LEFT JOIN HLSP_PS1_PSC.dbo.pointsource_scores psc on o.objid=psc.objid
     FULL JOIN StackModelFitSer s on o.objid=s.objid
     INNER JOIN StackObjectAttributes b on o.objid=b.objid WHERE m.primaryDetection = 1
     """ 
