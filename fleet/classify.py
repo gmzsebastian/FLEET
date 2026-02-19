@@ -618,7 +618,7 @@ def create_info_table(parameters, output_table, data_catalog, **kwargs):
     red_brightest = kwargs.get('red_brightest', None)
 
     # Continue only if there was a catalog
-    if host_Pcc:
+    if host_Pcc is not None:
         pcc_pcc_threshold = kwargs.get('pcc_pcc_threshold')
         pcc_distance_threshold = kwargs.get('pcc_distance_threshold')
         if (host_Pcc <= pcc_pcc_threshold) | ((host_Pcc <= 0.07) & (host_separation <= pcc_distance_threshold)) | force_detection:
@@ -646,6 +646,10 @@ def create_info_table(parameters, output_table, data_catalog, **kwargs):
         info_table['deltamag_green'] = deltamag_green
         info_table['deltamag_red'] = deltamag_red
         info_table['hostless'] = hostless
+
+        # Add survey limit info
+        info_table['host_limit_g'] = host_limit['g']
+        info_table['host_limit_r'] = host_limit['r']
 
     # Add redshift labels
     redshift = kwargs.get('redshift', None)

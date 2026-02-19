@@ -10,12 +10,12 @@ class InstallAndFetchDustMaps(install):
         sfd.fetch()
 
 
-setup(name='fleet-pipe',
-      version='3.0.0',
+setup(name='fleet_pipe',
+      version='3.0.1',
       description='Finding Luminous and Exotic Extragalactic Transients',
       url='https://github.com/gmzsebastian/fleet',
       author=['Sebastian Gomez'],
-      author_email="sgomez@cfa.harvard.edu",
+      author_email="sebastian.gomez@austin.utexas.edu",
       license='MIT',
       packages=['fleet'],
       license_files=["LICENSE"],

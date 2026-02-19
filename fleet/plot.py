@@ -734,9 +734,15 @@ def plot_host_information(sub_y, sub_x, sub_n, info_table):
 
     if info_table['hostless']:
         content.append("Hostless!")
+        is_hostless = True
+    else:
+        is_hostless = False
 
     # Magnitude information
-    host_magnitude_r = info_table['host_magnitude_r'][0]
+    if is_hostless:
+        host_magnitude_r = info_table['host_limit_r'][0]
+    else:
+        host_magnitude_r = info_table['host_magnitude_r'][0]
     brightest_mag = info_table['brightest_mag'][0]
     red_brightest = info_table['red_brightest'][0]
     if red_brightest not in emptys:

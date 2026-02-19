@@ -10,7 +10,7 @@ Using pip
 
 To install the latest release version you can run::
 
-    pip install fleet-pipe
+    pip install fleet_pipe
 
 From source
 -----------

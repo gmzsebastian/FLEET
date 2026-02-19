@@ -346,11 +346,14 @@ def get_ztf_lightcurve(object_name, ztf_name=None, save_ztf=True, ztf_dir='ztf',
         return ztf_data, ztf_name
 
     # If we have detections, convert to astropy table and get coordinates
-    if len(lightcurve) > 0:
+    if ('detections' in lightcurve) and (not lightcurve.empty):
         # Convert to Astropy table
         det = table.Table(lightcurve['detections'][0])['mjd', 'magpsf', 'sigmapsf', 'fid', 'ra', 'dec']
-        if len(lightcurve['non_detections'][0]) > 0:
-            non_det = table.Table(lightcurve['non_detections'][0])['mjd', 'diffmaglim', 'fid']
+        if 'non_detections' in lightcurve:
+            if len(lightcurve['non_detections'][0]) > 0:
+                non_det = table.Table(lightcurve['non_detections'][0])['mjd', 'diffmaglim', 'fid']
+            else:
+                non_det = table.Table(names=['MJD', 'Raw', 'Filter'], dtype=['str'] * 3)
         else:
             non_det = table.Table(names=['MJD', 'Raw', 'Filter'], dtype=['str'] * 3)
 

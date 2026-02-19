@@ -283,10 +283,17 @@ def query_sdss(ra_deg, dec_deg, search_radius=1.0, DR=18,
                 return None
 
         # Change name of objid
-        if results:
-            results.rename_column('objid', 'objID')
-        else:
+        if results is None or len(results) == 0:
             return None
+
+        # Rename objid -> objID only if present
+        if 'objid' in results.colnames:
+            results.rename_column('objid', 'objID')
+        elif 'objID' not in results.colnames:
+            print(f"SDSS query returned columns: {results.colnames}")
+            print("Expected 'objid' (or 'objID') but it wasn't returned; check SDSS_query SELECT list.")
+            return None
+
     else:
         try:
             # Convert search radius to degrees
@@ -626,7 +633,7 @@ def query_panstarrs(ra_deg, dec_deg, search_radius=1, DR=2,
     return output
 
 
-def query_gaia(ra_deg, dec_deg, search_radius=1.0, DR=3):
+def query_gaia(ra_deg, dec_deg, search_radius=1.0, DR=3, gaia_limit=10):
     """
     Query Gaia for objects within a search radius of given coordinates.
 
@@ -640,6 +647,8 @@ def query_gaia(ra_deg, dec_deg, search_radius=1.0, DR=3):
         Search radius in arcsec
     DR : int, default 3
         Gaia Data Release
+    gaia_limit : int, default 10
+        Maximum number of sources to return
 
     Returns
     --------
@@ -648,7 +657,7 @@ def query_gaia(ra_deg, dec_deg, search_radius=1.0, DR=3):
     """
 
     # Set a low default row limit
-    Gaia.ROW_LIMIT = 10
+    Gaia.ROW_LIMIT = gaia_limit
     # Specify the data release
     Gaia.MAIN_GAIA_TABLE = f"gaiadr{DR}.gaia_source"
 
@@ -1279,15 +1288,14 @@ def get_host_mag(data_catalog, band, type='psf', survey=None,
         # Replace the nan values with the PSF magnitude
         if impute_values:
             if f'{band}PSFMag_3pi' in data_catalog.colnames:
-                host_mag[np.isnan(host_mag)] = data_catalog[f'{band}PSFMag_3pi'][np.isnan(host_mag)]
+                host_mag[~np.isfinite(host_mag)] = data_catalog[f'{band}PSFMag_3pi'][~np.isfinite(host_mag)]
             elif f'psfMag_{band}_sdss' in data_catalog.colnames:
-                host_mag[np.isnan(host_mag)] = data_catalog[f'psfMag_{band}_sdss'][np.isnan(host_mag)]
+                host_mag[~np.isfinite(host_mag)] = data_catalog[f'psfMag_{band}_sdss'][~np.isfinite(host_mag)]
     else:
         raise ValueError("Invalid type specified. Use 'psf' or 'kron'.")
 
     # Replace NaN values with the upper limit
-    host_mag[np.isnan(host_mag)] = host_limit[band]
-
+    host_mag[~np.isfinite(host_mag)] = host_limit[band]
     return host_mag
 
 
@@ -1374,7 +1382,9 @@ def catalog_operations(object_name, merged_catalog, ra_deg, dec_deg, Pcc_filter=
     if 'gPSFMag_3pi' in data_catalog.colnames:
         for band in bands_psst:
             cenwaves = np.array(psst_refs[band]) * u.AA
-            correction = -2.5 * np.log10(ext.extinguish(cenwaves, Ebv=E_BV))
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=RuntimeWarning)
+                correction = -2.5 * np.log10(ext.extinguish(cenwaves, Ebv=E_BV))
 
             data_catalog[f'{band}PSFMag_3pi'] -= correction
             data_catalog[f'{band}KronMag_3pi'] -= correction
@@ -1382,7 +1392,9 @@ def catalog_operations(object_name, merged_catalog, ra_deg, dec_deg, Pcc_filter=
     if 'psfMag_g_sdss' in data_catalog.colnames:
         for band in bands_sdss:
             cenwaves = np.array(sdss_refs[band]) * u.AA
-            correction = -2.5 * np.log10(ext.extinguish(cenwaves, Ebv=E_BV))
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=RuntimeWarning)
+                correction = -2.5 * np.log10(ext.extinguish(cenwaves, Ebv=E_BV))
 
             data_catalog[f'psfMag_{band}_sdss'] -= correction
             data_catalog[f'modelMag_{band}_sdss'] -= correction

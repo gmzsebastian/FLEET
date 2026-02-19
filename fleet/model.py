@@ -277,7 +277,7 @@ def lnlike_ul(obs_mags, model_mags, err_mags, obs_limits):
         # For each upper limit, calculate the integral term
         for j in np.where(obs_limits)[0]:
             # Calculate how many sigma the model is from the limit
-            z = (model_mags[j] - obs_mags[j]) / err_mags[j]
+            z = (model_mags[j] - obs_mags[j]) / np.abs(err_mags[j])
 
             # Use the complementary error function to calculate the integral term
             # of Equation 8 in https://arxiv.org/pdf/1210.0285
@@ -1262,6 +1262,7 @@ def fit_data(input_table, phase_min=-200, phase_max=75, n_walkers=50, n_steps=50
                     print(f'Warning: Brightest magnitude {brightest_mag} is less than the prior {prior_mag} minimum.')
                 pos_in = create_prior()
                 pos_out = pos_in[0:1]
+
                 while len(pos_out) < n_walkers:
                     pos = pos_in[[np.isfinite(lnprior_double(i)) for i in pos_in]]
                     pos_out = np.append(pos_out, pos, axis=0)
@@ -1493,7 +1494,8 @@ def fit_data(input_table, phase_min=-200, phase_max=75, n_walkers=50, n_steps=50
                 lc_width = np.random.uniform(-0.4, 0.0, n_walkers)
                 lc_decline = np.random.uniform(0.01, 1.0, n_walkers)
                 phase_offset = np.random.uniform(-20, 10, n_walkers)
-                mag_offset = np.random.uniform(brightest_mag-0.3, brightest_mag+0.3, n_walkers)
+                use_brightest_mag = np.max([priors['mag_offset'][0], brightest_mag])
+                mag_offset = np.random.uniform(use_brightest_mag-0.3, use_brightest_mag+0.3, n_walkers)
                 initial_temp = np.random.uniform(3000.0, 7000.0, n_walkers)
                 cooling_rate = np.random.uniform(10, 1000.0, n_walkers)
 
