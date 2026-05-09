@@ -633,7 +633,7 @@ def query_panstarrs(ra_deg, dec_deg, search_radius=1, DR=2,
     return output
 
 
-def query_gaia(ra_deg, dec_deg, search_radius=1.0, DR=3, gaia_limit=10):
+def query_gaia(ra_deg, dec_deg, search_radius=1.0, DR=3, gaia_limit=10, use_vizier=False):
     """
     Query Gaia for objects within a search radius of given coordinates.
 
@@ -649,6 +649,8 @@ def query_gaia(ra_deg, dec_deg, search_radius=1.0, DR=3, gaia_limit=10):
         Gaia Data Release
     gaia_limit : int, default 10
         Maximum number of sources to return
+    use_vizier : bool, default False
+        If True, query Gaia via VizieR instead of Gaia archive
 
     Returns
     --------
@@ -656,24 +658,75 @@ def query_gaia(ra_deg, dec_deg, search_radius=1.0, DR=3, gaia_limit=10):
         Table containing Gaia data
     """
 
-    # Set a low default row limit
-    Gaia.ROW_LIMIT = gaia_limit
-    # Specify the data release
-    Gaia.MAIN_GAIA_TABLE = f"gaiadr{DR}.gaia_source"
-
-    # Query Catalog
     coord = SkyCoord(ra=ra_deg, dec=dec_deg, unit=(u.degree, u.degree), frame='icrs')
-    gaia_query = Gaia.cone_search_async(coord, radius=u.Quantity(search_radius, u.arcsec))
-    gaia_table = gaia_query.get_results()
 
-    catalog_gaia = gaia_table['ra', 'ra_error', 'dec', 'dec_error',
-                              'parallax', 'parallax_error', 'pm',
-                              'pmra', 'pmra_error', 'pmdec', 'pmdec_error',
-                              'phot_g_mean_mag', 'phot_bp_mean_mag',
-                              'phot_rp_mean_mag']
+    if not use_vizier:
+        # ---- Original behavior (Gaia archive) ----
+        Gaia.ROW_LIMIT = gaia_limit
+        Gaia.MAIN_GAIA_TABLE = f"gaiadr{DR}.gaia_source"
 
-    return catalog_gaia
+        gaia_query = Gaia.cone_search_async(coord, radius=u.Quantity(search_radius, u.arcsec))
+        gaia_table = gaia_query.get_results()
 
+        catalog_gaia = gaia_table[
+            'ra', 'ra_error', 'dec', 'dec_error',
+            'parallax', 'parallax_error', 'pm',
+            'pmra', 'pmra_error', 'pmdec', 'pmdec_error',
+            'phot_g_mean_mag', 'phot_bp_mean_mag',
+            'phot_rp_mean_mag'
+        ]
+
+        return catalog_gaia
+
+    else:
+        # ---- VizieR behavior ----
+        if DR == 3:
+            catalog_id = "I/355/gaiadr3"
+        elif DR == 2:
+            catalog_id = "I/345/gaia2"
+        else:
+            raise ValueError("VizieR Gaia only supports DR2 or DR3")
+
+        vizier = Vizier(
+            catalog=catalog_id,
+            columns=[
+                'RA_ICRS', 'e_RA_ICRS',
+                'DE_ICRS', 'e_DE_ICRS',
+                'Plx', 'e_Plx',
+                'pmRA', 'e_pmRA',
+                'pmDE', 'e_pmDE',
+                'Gmag', 'BPmag', 'RPmag'
+            ],
+            row_limit=gaia_limit
+        )
+
+        result = vizier.query_region(
+            coord,
+            radius=u.Quantity(search_radius, u.arcsec),
+            catalog=catalog_id
+        )
+
+        if len(result) == 0:
+            return None
+
+        catalog_gaia = result[0]
+
+        # Rename columns to match Gaia archive naming as closely as possible
+        catalog_gaia.rename_columns(
+            ['RA_ICRS', 'e_RA_ICRS', 'DE_ICRS', 'e_DE_ICRS',
+             'Plx', 'e_Plx', 'pmRA', 'e_pmRA', 'pmDE', 'e_pmDE',
+             'Gmag', 'BPmag', 'RPmag'],
+            ['ra', 'ra_error', 'dec', 'dec_error',
+             'parallax', 'parallax_error',
+             'pmra', 'pmra_error', 'pmdec', 'pmdec_error',
+             'phot_g_mean_mag', 'phot_bp_mean_mag', 'phot_rp_mean_mag']
+        )
+
+        # Add total proper motion column (to match Gaia archive output)
+        if 'pmra' in catalog_gaia.colnames and 'pmdec' in catalog_gaia.colnames:
+            catalog_gaia['pm'] = (catalog_gaia['pmra']**2 + catalog_gaia['pmdec']**2)**0.5
+
+        return catalog_gaia
 
 def query_wise(ra_deg, dec_deg, search_radius=1.0, data_table="allwise_p3as_psd"):
     """

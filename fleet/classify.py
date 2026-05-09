@@ -39,9 +39,9 @@ def format_training(training_days, grouping, sorting_state, features, model, cle
     ----------
     training_days : float
         The number of days of photometry to use for training.
-    grouping : str
+    grouping : int
         The grouping of transient types to use for training.
-    sorting_state : bool
+    sorting_state : int
         The random seed for the sorting algorithm.
     features : int
         The index of the feature list to use for training.
@@ -79,7 +79,7 @@ def format_training(training_days, grouping, sorting_state, features, model, cle
            '2020dic',  '2020gar',  '2020gc',   '2020iji',  '2020kq',   '2020lmd',
            '2020mjm',  '2020mos',  '2020mrf',  '2020nps',  '2020nze',  '2020rue',
            '2020rxv',  '2020vba',  '2020xpy',  '2020ykb',  '2020ykr',  '2021cjy',
-           '2021csf',  '2021dpw]', '2021hbl',  '2021hiw',  '2021hmb',  '2021ojn',
+           '2021csf',  '2021dpw',  '2021hbl',  '2021hiw',  '2021hmb',  '2021ojn',
            '2021pie',  '2021sbc',  '2021scb',  '2021ued',  '2021uij',  '2021yte',
            '2021zu']
     if remove_bad:
@@ -90,14 +90,20 @@ def format_training(training_days, grouping, sorting_state, features, model, cle
     training_table = training_table_in[np.random.permutation(len(training_table_in))]
 
     # Clean the table by removing objects without a host galaxy
-    if clean:
-        clean_training = training_table[np.isfinite(training_table['lc_width_r']) &
-                                        np.isfinite(training_table['host_Pcc']) & (training_table['input_separation'] > 0)]
+    if model == 'full':
+        width_column = 'lc_width'
+    elif (model == 'single') or (model == 'double'):
+        width_column = 'lc_width_r'
     else:
-        if model == 'full':
-            clean_training = training_table[np.isfinite(training_table['lc_width']) & np.isfinite(training_table['host_Pcc'])]
-        elif (model == 'single') or (model == 'double'):
-            clean_training = training_table[np.isfinite(training_table['lc_width_r']) & np.isfinite(training_table['host_Pcc'])]
+        raise ValueError(f"Model '{model}' not implemented")
+
+    if clean:
+        clean_training = training_table[np.isfinite(training_table[width_column]) &
+                                        np.isfinite(training_table['host_Pcc']) &
+                                        (training_table['input_separation'] > 0)]
+    else:
+        clean_training = training_table[np.isfinite(training_table[width_column]) &
+                                        np.isfinite(training_table['host_Pcc'])]
 
     # Select the feature set
     in_features = feature_set[features]
@@ -150,7 +156,7 @@ def create_pickle(training_days, grouping, smote_state, n_estimators, max_depth,
         The number of days of photometry to use for training.
     grouping : str
         The grouping of transient types to use for training.
-    smote_state : bool
+    smote_state : int
         The random seed for the SMOTE algorithm.
     n_estimators : int
         The number of trees in the random forest.
@@ -222,7 +228,7 @@ def leave_one_out(remove_ind, training_data, training_class, training_names, tes
         The testing classes for the classifier.
     testing_names : np.ndarray
         The AT names of each object in the table
-    smote_state : bool
+    smote_state : int
         The random seed for the SMOTE algorithm.
     n_estimators : int
         The number of trees in the random forest.
@@ -285,7 +291,7 @@ def leave_one_out_parallel(training_data, training_class, training_names, testin
         The testing classes for the classifier.
     testing_names : np.ndarray
         The AT names of each object in the table
-    smote_state : bool
+    smote_state : int
         The random seed for the SMOTE algorithm.
     n_estimators : int
         The number of trees in the random forest.
@@ -419,9 +425,9 @@ def create_validation_table(training_days, testing_days, grouping, smote_state, 
         The number of days of photometry to use for training.
     testing_days : float
         The number of days of photometry to use for testing.
-    grouping : str
+    grouping : int
         The grouping of transient types to use for training.
-    smote_state : bool
+    smote_state : int
         The random seed for the SMOTE algorithm.
     n_estimators : int
         The number of trees in the random forest.
@@ -429,7 +435,7 @@ def create_validation_table(training_days, testing_days, grouping, smote_state, 
         The maximum depth of the trees in the random forest.
     clf_state : int
         The random seed for the random forest classifier.
-    sorting_state : bool
+    sorting_state : int
         The random seed for the sorting algorithm.
     features : int
         The index of the feature list to use for training.
@@ -507,7 +513,7 @@ def predict_probability(info_table, prefix, features, model):
 
     Returns
     -------
-    probability_avearge : numpy.ndarray
+    probability_average : numpy.ndarray
         The average probability of each class.
     probability_std : numpy.ndarray
         The standard deviation of the probability of each class.
@@ -527,7 +533,10 @@ def predict_probability(info_table, prefix, features, model):
 
     # Find pickle files
     file_directory = os.path.join(fleet_data, f'{prefix}_*.pkl')
-    filenames = glob.glob(file_directory)
+    filenames = sorted(glob.glob(file_directory))
+
+    if len(filenames) == 0:
+        raise FileNotFoundError(f"No classifier pickle files found for prefix '{prefix}' in {fleet_data}")
 
     predicted_list = []  # Initialize an empty list
 
@@ -542,10 +551,10 @@ def predict_probability(info_table, prefix, features, model):
     predicted_array = np.array(predicted_list)
 
     # Calculate the average and standard deviation
-    probability_avearge = np.average(predicted_array, axis=0)
+    probability_average = np.average(predicted_array, axis=0)
     probability_std = np.std(predicted_array, axis=0)
 
-    return probability_avearge, probability_std
+    return probability_average, probability_std
 
 
 def create_info_table(parameters, output_table, data_catalog, **kwargs):
@@ -604,7 +613,10 @@ def create_info_table(parameters, output_table, data_catalog, **kwargs):
     # Calculate delta time
     bright_mjd = kwargs.get('bright_mjd')
     first_mjd = kwargs.get('first_mjd')
-    delta_time = bright_mjd - first_mjd
+    if bright_mjd is not None and first_mjd is not None and np.isfinite(bright_mjd) and np.isfinite(first_mjd):
+        delta_time = bright_mjd - first_mjd
+    else:
+        delta_time = np.nan
     info_table['delta_time'] = delta_time
 
     # Calculate additional features
@@ -693,15 +705,15 @@ def create_info_table(parameters, output_table, data_catalog, **kwargs):
 
 
 def predict(object_name_in=None, ra_in=None, dec_in=None, object_class_in=None, redshift_in=None, acceptance_radius=3, save_ztf=True,
-            download_ztf=True, download_osc=False, read_local=True, query_tns=False, save_lc=True, lc_dir='lightcurves',
-            read_existing=False, clean_ignore=True, dust_map='SFD', phase_min=-200, phase_max=75,
+            download_ztf=True, download_osc=False, save_rubin=True, download_rubin=True, read_local=True, query_tns=False, save_lc=True,
+            lc_dir='lightcurves', read_existing=False, clean_ignore=True, dust_map='SFD', phase_min=-200, phase_max=75,
             n_walkers=50, n_steps=70, n_cores=1, model='full', late_phase=40, default_err=0.1, default_decline_g=0.55,
             default_decline_r=0.37, burn_in=0.75, sigma_clip=2, repeats=4, save_trace=False, save_lcplot=False, use_median=True,
             search_radius=1.0, reimport_catalog=False, catalog_dir='catalogs', save_catalog=True, use_old=True, Pcc_filter='i',
             Pcc_filter_alternative='r', neighbors=20, recalculate_nature=False, use_glade=False, best_index=None,
             max_separation_glade=60.0, dimmest_glade=16.0, max_pcc_glade=0.01, max_distance_glade=1.0, star_separation=1.0,
             star_cut=0.1, save_params=True, params_dir='parameters', classifier='all', plot_output=True, plot_dir='plots',
-            do_observability=True, include_het=False, pupil_fraction=0.3, minimum_halflight=0.7, classify=True, ztf_dir='ztf',
+            do_observability=True, include_het=False, pupil_fraction=0.3, minimum_halflight=0.7, classify=True, ztf_dir='ztf', rubin_dir='rubin',
             match_radius_arcsec=1.5, pcc_pcc_threshold=0.02, pcc_distance_threshold=8, n_sigma_limit=3, emcee_progress=True,
             running_live=False, osc_dir='osc', local_dir='photometry'):
     """
@@ -727,6 +739,10 @@ def predict(object_name_in=None, ra_in=None, dec_in=None, object_class_in=None, 
         Whether to download the ZTF light curve data. Default is True.
     download_osc : bool, optional
         Whether to download the OSC light curve data. Default is False.
+    save_rubin : bool, optional
+        Whether to save the Rubin light curve data. Default is True.
+    download_rubin : bool, optional
+        Whether to download the Rubin light curve data. Default is True.
     read_local : bool, optional
         Whether to read local light curve data. Default is True.
     query_tns : bool, optional
@@ -829,6 +845,8 @@ def predict(object_name_in=None, ra_in=None, dec_in=None, object_class_in=None, 
         Whether to classify the transient object. Default is True.
     ztf_dir : str, optional
         The directory to save the ZTF data. Default is 'ztf'.
+    rubin_dir : str, optional
+        The directory to save the Rubin data. Default is 'rubin'.
     match_radius_arcsec : float, optional
         The radius in arcseconds to match the transient object with the host galaxy. Default is 1.5.
     pcc_pcc_threshold : float, optional
@@ -860,11 +878,11 @@ def predict(object_name_in=None, ra_in=None, dec_in=None, object_class_in=None, 
     #########################
     # Basic transient info #
     #########################
-    ra_deg, dec_deg, transient_source, object_name, ztf_data, osc_data, local_data, ztf_name, tns_name, object_class, redshift = \
+    ra_deg, dec_deg, transient_source, object_name, ztf_data, rubin_data, osc_data, local_data, ztf_name, rubin_name, tns_name, object_class, redshift = \
         get_transient_info(object_name_in=object_name_in, ra_in=ra_in, dec_in=dec_in, object_class_in=object_class_in, redshift_in=redshift_in,
                            acceptance_radius=acceptance_radius, save_ztf=save_ztf, download_ztf=download_ztf,
-                           download_osc=download_osc, read_local=read_local, query_tns=query_tns, ztf_dir=ztf_dir, lc_dir=lc_dir,
-                           osc_dir=osc_dir, local_dir=local_dir)
+                           download_osc=download_osc, save_rubin=save_rubin, download_rubin=download_rubin, read_local=read_local,
+                           query_tns=query_tns, ztf_dir=ztf_dir, rubin_dir=rubin_dir, lc_dir=lc_dir, osc_dir=osc_dir, local_dir=local_dir)
     print('\nPredicting:', object_name)
 
     if save_params:
@@ -889,9 +907,9 @@ def predict(object_name_in=None, ra_in=None, dec_in=None, object_class_in=None, 
     ####################
     # Light curve info #
     ####################
-    input_table = process_lightcurve(object_name, ra_deg=ra_deg, dec_deg=dec_deg, ztf_data=ztf_data, osc_data=osc_data,
-                                     local_data=local_data, save_lc=save_lc, lc_dir=lc_dir, read_existing=read_existing,
-                                     clean_ignore=clean_ignore, dust_map=dust_map)
+    input_table = process_lightcurve(object_name, ra_deg=ra_deg, dec_deg=dec_deg, ztf_data=ztf_data, rubin_data=rubin_data,
+                                     osc_data=osc_data, local_data=local_data, save_lc=save_lc, lc_dir=lc_dir,
+                                     read_existing=read_existing, clean_ignore=clean_ignore, dust_map=dust_map)
 
     # Stop if it failed
     if input_table is None:
@@ -934,8 +952,8 @@ def predict(object_name_in=None, ra_in=None, dec_in=None, object_class_in=None, 
         # Create quick info table
         info_table = create_info_table(parameters, output_table, data_catalog=None, object_name_in=object_name_in, ra_in=ra_in, dec_in=dec_in,
                                        object_class_in=object_class_in, redshift_in=redshift_in, acceptance_radius=acceptance_radius, save_ztf=save_ztf,
-                                       download_ztf=download_ztf, download_osc=download_osc, read_local=read_local, query_tns=query_tns, save_lc=save_lc,
-                                       read_existing=read_existing, clean_ignore=clean_ignore, dust_map=dust_map,
+                                       download_ztf=download_ztf, download_osc=download_osc, download_rubin=download_rubin, save_rubin=save_rubin, read_local=read_local,
+                                       query_tns=query_tns, save_lc=save_lc, read_existing=read_existing, clean_ignore=clean_ignore, dust_map=dust_map,
                                        phase_min=phase_min, phase_max=phase_max, n_walkers=n_walkers, n_steps=n_steps, n_cores=n_cores,
                                        model=model, late_phase=late_phase, default_err=default_err, default_decline_g=default_decline_g,
                                        default_decline_r=default_decline_r, burn_in=burn_in, sigma_clip=sigma_clip, repeats=repeats,
@@ -946,9 +964,9 @@ def predict(object_name_in=None, ra_in=None, dec_in=None, object_class_in=None, 
                                        max_separation_glade=max_separation_glade, dimmest_glade=dimmest_glade, max_pcc_glade=max_pcc_glade,
                                        max_distance_glade=max_distance_glade, star_separation=star_separation, star_cut=star_cut, ra_deg=ra_deg,
                                        dec_deg=dec_deg, transient_source=transient_source, object_name=object_name, ztf_name=ztf_name,
-                                       tns_name=tns_name, object_class=object_class, redshift=redshift, color_peak=color_peak, late_color=late_color,
-                                       late_color10=late_color10, late_color20=late_color20, late_color40=late_color40, late_color60=late_color60,
-                                       first_to_peak_r=first_to_peak_r, first_to_peak_g=first_to_peak_g, peak_to_last_r=peak_to_last_r,
+                                       rubin_name=rubin_name, tns_name=tns_name, object_class=object_class, redshift=redshift, color_peak=color_peak,
+                                       late_color=late_color, late_color10=late_color10, late_color20=late_color20, late_color40=late_color40,
+                                       late_color60=late_color60, first_to_peak_r=first_to_peak_r, first_to_peak_g=first_to_peak_g, peak_to_last_r=peak_to_last_r,
                                        peak_to_last_g=peak_to_last_g, bright_mjd=bright_mjd, first_mjd=first_mjd, brightest_mag=brightest_mag,
                                        green_brightest=green_brightest, red_brightest=red_brightest, chi2=chi2, save_params=save_params, classifier=classifier,
                                        plot_output=plot_output, do_observability=do_observability, classify=classify,
@@ -1009,7 +1027,8 @@ def predict(object_name_in=None, ra_in=None, dec_in=None, object_class_in=None, 
     # Create the info table
     info_table = create_info_table(parameters, output_table, data_catalog, object_name_in=object_name_in, ra_in=ra_in, dec_in=dec_in,
                                    object_class_in=object_class_in, redshift_in=redshift_in, acceptance_radius=acceptance_radius, save_ztf=save_ztf,
-                                   download_ztf=download_ztf, download_osc=download_osc, read_local=read_local, query_tns=query_tns, save_lc=save_lc,
+                                   save_rubin=save_rubin, download_ztf=download_ztf, download_rubin=download_rubin,
+                                   download_osc=download_osc, read_local=read_local, query_tns=query_tns, save_lc=save_lc,
                                    read_existing=read_existing, clean_ignore=clean_ignore, dust_map=dust_map,
                                    phase_min=phase_min, phase_max=phase_max, n_walkers=n_walkers, n_steps=n_steps, n_cores=n_cores,
                                    model=model, late_phase=late_phase, default_err=default_err, default_decline_g=default_decline_g,
@@ -1020,7 +1039,7 @@ def predict(object_name_in=None, ra_in=None, dec_in=None, object_class_in=None, 
                                    recalculate_nature=recalculate_nature, use_glade=use_glade, best_index=best_index,
                                    max_separation_glade=max_separation_glade, dimmest_glade=dimmest_glade, max_pcc_glade=max_pcc_glade,
                                    max_distance_glade=max_distance_glade, star_separation=star_separation, star_cut=star_cut, ra_deg=ra_deg,
-                                   dec_deg=dec_deg, transient_source=transient_source, object_name=object_name, ztf_name=ztf_name,
+                                   dec_deg=dec_deg, transient_source=transient_source, object_name=object_name, ztf_name=ztf_name, rubin_name=rubin_name,
                                    tns_name=tns_name, object_class=object_class, redshift=redshift, color_peak=color_peak, late_color=late_color,
                                    late_color10=late_color10, late_color20=late_color20, late_color40=late_color40, late_color60=late_color60,
                                    first_to_peak_r=first_to_peak_r, first_to_peak_g=first_to_peak_g, peak_to_last_r=peak_to_last_r,
@@ -1099,7 +1118,7 @@ def predict(object_name_in=None, ra_in=None, dec_in=None, object_class_in=None, 
 
 # Define the process_object function outside of create_training_set
 def _process_single_object(idx, all_objects, output_dir, phase_max, model, overwrite, skip_quick,
-                           download_ztf, **kwargs):
+                           download_ztf, download_rubin, **kwargs):
     """Process a single object from the training set."""
     # Read in the light curve
     object_name_in = all_objects['Name'][idx]
@@ -1123,11 +1142,17 @@ def _process_single_object(idx, all_objects, output_dir, phase_max, model, overw
         return None
     else:
         try:
+            # If actively downloading ZTF/Rubin data, do not force use of an
+            # old combined light-curve file, because it may not include the
+            # newly requested survey data.
+            read_existing = kwargs.pop('read_existing', not (download_ztf or download_rubin))
+
             return predict(object_name_in=object_name_in, ra_in=ra_in, dec_in=dec_in,
                            object_class_in=object_class_in, redshift_in=redshift_in,
                            phase_max=phase_max, model=model, params_dir=output_dir,
                            query_tns=False, do_observability=False, classify=False,
-                           download_ztf=download_ztf, read_existing=True, **kwargs)
+                           download_ztf=download_ztf, download_rubin=download_rubin,
+                           read_existing=read_existing, **kwargs)
         except Exception as e:
             print(f"Error processing {object_name_in}: {e}")
             return None
@@ -1205,7 +1230,7 @@ def combine_training_set(params_dir, phase_max=None, model=None, overwrite_out=F
 def create_training_set(phase_max=70, model='double', params_dir='training_set',
                         overwrite=False, num_processes=1, object_list=None,
                         skip_quick=False, overwrite_out=False, save_combined=True,
-                        download_ztf=False, all_objects=None, **kwargs):
+                        download_ztf=False, download_rubin=False, all_objects=None, **kwargs):
     """
     Create a training set for the classifier based on a list of
     classified transients. The training set is created by running
@@ -1236,7 +1261,9 @@ def create_training_set(phase_max=70, model='double', params_dir='training_set',
     save_combined : bool
         Whether to save the combined table after processing. Default is True.
     download_ztf : bool
-        Whether or not to query Alerce
+        Whether or not to query ALeRCE for ZTF light curves.
+    download_rubin : bool
+        Whether or not to query ALeRCE for Rubin/LSST light curves.
     all_objects : astropy.Table
         Table with input objects
     """
@@ -1261,6 +1288,7 @@ def create_training_set(phase_max=70, model='double', params_dir='training_set',
                            overwrite=overwrite,
                            skip_quick=skip_quick,
                            download_ztf=download_ztf,
+                           download_rubin=download_rubin,
                            **kwargs)
 
     # If single process, use simple loop for better debugging

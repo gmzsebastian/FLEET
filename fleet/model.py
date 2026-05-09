@@ -64,6 +64,109 @@ cooling_rate_std = 100.0
 #######
 # Define functions for light curve models
 #######
+def normalize_label(value):
+    """Normalize telescope/source/instrument labels used to infer filter systems."""
+    if value is None:
+        return ''
+    if isinstance(value, bytes):
+        value = value.decode()
+    return str(value).strip().lower()
+
+
+def normalize_filter_name(filter_name):
+    """Normalize a filter name while preserving standard uppercase Johnson-Cousins bands."""
+    if isinstance(filter_name, bytes):
+        filter_name = filter_name.decode()
+    filter_name = str(filter_name).strip()
+
+    if filter_name in ztf_refs or filter_name in lsst_refs or filter_name in generic_refs:
+        return filter_name
+
+    lower_name = filter_name.lower()
+    if lower_name in ztf_refs or lower_name in lsst_refs or lower_name in generic_refs:
+        return lower_name
+
+    upper_name = filter_name.upper()
+    if upper_name in generic_refs:
+        return upper_name
+
+    return filter_name
+
+def get_filter_cenwave(filter_name, telescope=None, source=None, instrument=None):
+    """
+    Return the central wavelength for one photometric row.
+
+    ZTF and Rubin/LSST use slightly different g/r/i effective wavelengths,
+    so mixed-survey light curves should choose the reference per row rather
+    than once per whole table.
+    """
+    filter_name = normalize_filter_name(filter_name)
+    labels = {normalize_label(telescope), normalize_label(source), normalize_label(instrument)}
+
+    if labels.intersection({'rubin', 'lsst'}):
+        refs = lsst_refs
+    elif 'ztf' in labels:
+        refs = ztf_refs
+    elif 'alerce' in labels and filter_name in ztf_refs:
+        # Backward-compatible fallback for old ZTF tables with Source='Alerce'
+        # and no Telescope/Instrument column.
+        refs = ztf_refs
+    else:
+        refs = generic_refs
+
+    if filter_name in refs:
+        return refs[filter_name]
+    if filter_name in generic_refs:
+        return generic_refs[filter_name]
+    if filter_name in lsst_refs:
+        return lsst_refs[filter_name]
+    if filter_name in ztf_refs:
+        return ztf_refs[filter_name]
+
+    raise KeyError(f"No central wavelength defined for filter '{filter_name}'")
+
+
+def get_table_cenwaves(input_table):
+    """Return central wavelengths for every row in an input light-curve table."""
+    telescopes = input_table['Telescope'] if 'Telescope' in input_table.colnames else [None] * len(input_table)
+    sources = input_table['Source'] if 'Source' in input_table.colnames else [None] * len(input_table)
+    instruments = input_table['Instrument'] if 'Instrument' in input_table.colnames else [None] * len(input_table)
+
+    return np.array([
+        get_filter_cenwave(filter_name, telescope=telescope, source=source, instrument=instrument)
+        for filter_name, telescope, source, instrument in zip(input_table['Filter'], telescopes, sources, instruments)
+    ])
+
+
+def get_filter_wavelengths(filters_used, input_table=None):
+    """
+    Return one representative central wavelength per plotted filter.
+
+    If a table with a Cenwave column is supplied, use the median wavelength
+    actually present for that filter. This keeps mixed ZTF/Rubin light curves
+    from being forced entirely onto one survey's filter system.
+    """
+    wavelengths = []
+
+    if input_table is not None and len(input_table) > 0 and 'Filter' in input_table.colnames:
+        table_filters = np.array([normalize_filter_name(filter_name) for filter_name in input_table['Filter']])
+        if 'Cenwave' in input_table.colnames:
+            table_cenwaves = np.array(input_table['Cenwave'], dtype=float)
+        else:
+            table_cenwaves = get_table_cenwaves(input_table)
+
+        for filter_name in filters_used:
+            clean_filter = normalize_filter_name(filter_name)
+            matched = table_filters == clean_filter
+            matched_cenwaves = table_cenwaves[matched]
+            matched_cenwaves = matched_cenwaves[np.isfinite(matched_cenwaves)]
+            if len(matched_cenwaves) > 0:
+                wavelengths.append(np.nanmedian(matched_cenwaves))
+            else:
+                wavelengths.append(get_filter_cenwave(clean_filter))
+        return np.array(wavelengths)
+
+    return np.array([get_filter_cenwave(normalize_filter_name(filter_name)) for filter_name in filters_used])
 
 
 def linex(phase, lc_width, lc_decline, phase_offset, mag_offset):
@@ -642,10 +745,6 @@ def format_data(input_table, default_err=0.1, clean=True, remove_ul=False,
     ----------
     input_table : astropy.table.Table
         Input data table containing photometry
-    filter_refs : dict
-        Dictionary mapping filter names to their central wavelengths
-    filter_colors : dict
-        Dictionary mapping filter names to their colors
     clean : bool, default True
         Remove ignored data and nan values?
     remove_ul : bool, default False
@@ -671,20 +770,9 @@ def format_data(input_table, default_err=0.1, clean=True, remove_ul=False,
         MJD of the first observation
     """
 
-    # Define filter references for LSST and ZTF, if 'Cenwave' not in table
+    # Add central wavelength to each row
     if 'Cenwave' not in input_table.colnames:
-        if ('Telescope' in input_table.colnames and 'LSST' in input_table['Telescope']) or \
-           ('Instrument' in input_table.colnames and 'LSST' in input_table['Instrument']):
-            filter_refs = lsst_refs
-        elif ('Telescope' in input_table.colnames and np.all(input_table['Telescope'] == 'ZTF')) or \
-             ('Instrument' in input_table.colnames and np.all(input_table['Instrument'] == 'ZTF')):
-            filter_refs = ztf_refs
-        else:
-            filter_refs = generic_refs
-            print("Unknown or multiple telescopes in data. Adopting generic central wavelenghts.")
-
-        # Add central wavelength column based on filter name
-        input_table['Cenwave'] = [filter_refs[filter_name] for filter_name in input_table['Filter']]
+        input_table['Cenwave'] = get_table_cenwaves(input_table)
 
     # Filter out unwanted rows based on UL and Ignore flags
     if clean:
@@ -695,14 +783,19 @@ def format_data(input_table, default_err=0.1, clean=True, remove_ul=False,
 
     # Remove upper limits, or assign them a reasonable error
     if remove_ul:
-        output_table = output_table[(input_table['UL'] == 'False')]
+        output_table = output_table[(output_table['UL'] == 'False')]
     else:
         upperlimits = output_table['UL'] == 'True'
         output_table['MagErr'][upperlimits] = np.round(2.5 * np.log10(1 + 1/n_sigma_limit), 4)
 
     # Remove late-time upper limits
+    detections_for_limits = output_table[output_table['UL'] == 'False']
+    if len(detections_for_limits) == 0:
+        print("No detections found after filtering.")
+        return None, None, None
+
     if remove_late_ul:
-        first_mjd = np.nanmin(output_table[output_table['UL'] == 'False']['MJD'])
+        first_mjd = np.nanmin(detections_for_limits['MJD'])
         output_table = output_table[~((output_table['UL'] == 'True') & (output_table['MJD'] > first_mjd))]
 
     # Continue only if len(output_table) > 0
@@ -855,20 +948,13 @@ def plot_model(input_table, last_samples, best_params, model, object_name,
     output_table, bright_mjd, first_mjd = format_data(input_table, default_err=default_err,
                                                       n_sigma_limit=n_sigma_limit)
 
-    # Define filter references and colors
-    # Define filter references for LSST and ZTF
-    if ('Telescope' in input_table.colnames and 'LSST' in input_table['Telescope']) or \
-       ('Instrument' in input_table.colnames and 'LSST' in input_table['Instrument']):
-        filters_used = np.unique(output_table['Filter'])
-        wavelengths = np.array([lsst_refs[i] for i in filters_used])
-    elif ('Telescope' in input_table.colnames and np.all(input_table['Telescope'] == 'ZTF')) or \
-         ('Instrument' in input_table.colnames and np.all(input_table['Instrument'] == 'ZTF')):
-        filters_used = np.unique(output_table['Filter'])
-        wavelengths = np.array([ztf_refs[i] for i in filters_used])
-    else:
-        filters_used = np.unique(output_table['Filter'])
-        wavelengths = np.array([generic_refs[i] for i in filters_used])
-        print("\nUnknown or multiple telescopes in data. Adopting generic central wavelenghts.")
+    if output_table is None or len(output_table) == 0:
+        print("No valid data available for model plot.")
+        return
+
+    # Define representative filter wavelengths from the data itself.
+    filters_used = np.unique(output_table['Filter'])
+    wavelengths = get_filter_wavelengths(filters_used, output_table)
 
     for filter_name, filter_wave in zip(filters_used, wavelengths):
         mask = (output_table['Filter'] == filter_name)
@@ -1358,14 +1444,24 @@ def fit_data(input_table, phase_min=-200, phase_max=75, n_walkers=50, n_steps=50
                     parameters['phase_offset_g'] = phase_offset_mcmc_g[0]
                     parameters['mag_offset_g'] = mag_offset_mcmc_g[0]
                 else:
-                    parameters['lc_width_r'] = max_params_red[0]
-                    parameters['lc_decline_r'] = default_decline_r
-                    parameters['phase_offset_r'] = max_params_red[1]
-                    parameters['mag_offset_r'] = max_params_red[2]
-                    parameters['lc_width_g'] = max_params_green[0]
-                    parameters['lc_decline_g'] = default_decline_g
-                    parameters['phase_offset_g'] = max_params_green[1]
-                    parameters['mag_offset_g'] = max_params_green[2]
+                    if model == 'double':
+                        parameters['lc_width_r'] = max_params_red[0]
+                        parameters['lc_decline_r'] = max_params_red[1]
+                        parameters['phase_offset_r'] = max_params_red[2]
+                        parameters['mag_offset_r'] = max_params_red[3]
+                        parameters['lc_width_g'] = max_params_green[0]
+                        parameters['lc_decline_g'] = max_params_green[1]
+                        parameters['phase_offset_g'] = max_params_green[2]
+                        parameters['mag_offset_g'] = max_params_green[3]
+                    elif model == 'single':
+                        parameters['lc_width_r'] = max_params_red[0]
+                        parameters['lc_decline_r'] = default_decline_r
+                        parameters['phase_offset_r'] = max_params_red[1]
+                        parameters['mag_offset_r'] = max_params_red[2]
+                        parameters['lc_width_g'] = max_params_green[0]
+                        parameters['lc_decline_g'] = default_decline_g
+                        parameters['phase_offset_g'] = max_params_green[1]
+                        parameters['mag_offset_g'] = max_params_green[2]
 
                 # Band specfic
                 g_best = (parameters['lc_width_g'], parameters['lc_decline_g'],
@@ -1393,8 +1489,8 @@ def fit_data(input_table, phase_min=-200, phase_max=75, n_walkers=50, n_steps=50
                 peak_model_r = d_linex(*r_best[:3])
                 peak_model_g = d_linex(*g_best[:3])
                 # Calculate the time from peak to first detection
-                first_to_peak_r = peak_model_r - np.min(green_det['Phase_peak'])
-                first_to_peak_g = peak_model_g - np.min(red_det['Phase_peak'])
+                first_to_peak_r = peak_model_r - np.min(red_det['Phase_peak'])
+                first_to_peak_g = peak_model_g - np.min(green_det['Phase_peak'])
                 # Calculate the time from peak to last detection
                 peak_to_last_r = np.max(red_det['Phase_peak']) - peak_model_r
                 peak_to_last_g = np.max(green_det['Phase_peak']) - peak_model_g
@@ -1554,24 +1650,33 @@ def fit_data(input_table, phase_min=-200, phase_max=75, n_walkers=50, n_steps=50
                 map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]),
                     zip(*np.percentile(samples_crop, [15.87, 50, 84.13], axis=0)))
 
-            # Get best fit parameters
-            parameters['lc_width'] = lc_width_mcmc[0]
-            parameters['lc_decline'] = lc_decline_mcmc[0]
-            parameters['phase_offset'] = phase_offset_mcmc[0]
-            parameters['mag_offset'] = mag_offset_mcmc[0]
-            parameters['initial_temp'] = initial_temp_mcmc[0]
-            parameters['cooling_rate'] = cooling_rate_mcmc[0]
+            # Get best-fit parameters
+            median_params = np.array([
+                lc_width_mcmc[0],
+                lc_decline_mcmc[0],
+                phase_offset_mcmc[0],
+                mag_offset_mcmc[0],
+                initial_temp_mcmc[0],
+                cooling_rate_mcmc[0],
+            ])
 
-            # Get the best parameters
             if use_median:
-                best_params = np.array(list(parameters.values()))
+                best_params = median_params
             else:
                 best_params = max_params
 
-            # Calculate color at different phases
+            for key, value in zip(parameters.keys(), best_params):
+                parameters[key] = value
+
+            # Calculate color at different phases using representative wavelengths
+            # from the actual light curve. This keeps ZTF-only, Rubin-only, and
+            # mixed ZTF+Rubin colors internally consistent with the fitted data.
+            color_filters = np.array(['g', 'r'])
+            color_wavelengths = dict(zip(color_filters, get_filter_wavelengths(color_filters, output_table)))
+
             def get_color(phase, best_params):
-                g_mag = model_mag(phase, 4740.66, *best_params)
-                r_mag = model_mag(phase, 6172.34, *best_params)
+                g_mag = model_mag(phase, color_wavelengths['g'], *best_params)
+                r_mag = model_mag(phase, color_wavelengths['r'], *best_params)
                 return g_mag - r_mag
 
             # Get color during peak

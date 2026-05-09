@@ -1,4 +1,4 @@
-from .model import linex, model_mag, filter_colors, ztf_refs, lsst_refs, generic_refs
+from .model import linex, model_mag, get_filter_wavelengths
 from .catalog import sdss_refs, psst_refs, calc_separations
 import glob
 from astropy import table
@@ -122,6 +122,27 @@ def plot_colors(bands):
 
     # If input is a list of bands, return a list of colors
     return np.array([band_color_map.get(band, 'k') for band in bands])
+
+
+def photometry_source_indices(sources, telescopes=None):
+    """Group photometry rows into source categories used by the light-curve plot."""
+    sources = np.char.lower(np.char.strip(np.asarray(sources, dtype=str)))
+    if telescopes is None:
+        telescopes = np.array([''] * len(sources), dtype=str)
+    else:
+        telescopes = np.char.lower(np.char.strip(np.asarray(telescopes, dtype=str)))
+
+    is_rubin = np.isin(telescopes, ['rubin', 'lsst']) | np.isin(sources, ['rubin', 'lsst'])
+    is_ztf = (np.isin(telescopes, ['ztf']) | np.isin(sources, ['ztf', 'alerce'])) & ~is_rubin
+    is_local = np.isin(sources, ['local', 'flwo'])
+    is_other = ~(is_rubin | is_ztf | is_local)
+
+    return {
+        'ztf': np.flatnonzero(is_ztf),
+        'rubin': np.flatnonzero(is_rubin),
+        'local': np.flatnonzero(is_local),
+        'other': np.flatnonzero(is_other),
+    }
 
 
 def plot_1a(time, y_0=0.92540, m=0.0182386, t_0=3.95539, g_0=-0.884576, sigma_0=11.0422, tau=-17.5522, theta_0=18.7745):
@@ -659,11 +680,16 @@ def plot_host_information(sub_y, sub_x, sub_n, info_table):
     # Format Names
     object_name = info_table['object_name'][0]
     ZTF_name = info_table['ztf_name'][0] if info_table['ztf_name'][0] not in emptys else ''
+    Rubin_name = ''
+    if 'rubin_name' in info_table.colnames and info_table['rubin_name'][0] not in emptys:
+        Rubin_name = info_table['rubin_name'][0]
     TNS_name = info_table['tns_name'][0] if info_table['tns_name'][0] not in emptys else ''
 
     # Don't duplicate names
     if object_name == ZTF_name:
         ZTF_name = ''
+    if object_name == Rubin_name:
+        Rubin_name = ''
     if object_name == TNS_name:
         TNS_name = ''
 
@@ -717,6 +743,8 @@ def plot_host_information(sub_y, sub_x, sub_n, info_table):
         title += f"     {TNS_name}"
     if ZTF_name:
         title += f"     {ZTF_name}"
+    if Rubin_name:
+        title += f"     {Rubin_name}"
     plt.title(title)
 
     # Build the text content
@@ -732,11 +760,14 @@ def plot_host_information(sub_y, sub_x, sub_n, info_table):
     if object_class not in emptys:
         content.append(f"{object_class}")
 
-    if info_table['hostless']:
-        content.append("Hostless!")
-        is_hostless = True
+    hostless_value = info_table['hostless'][0]
+    if isinstance(hostless_value, str):
+        is_hostless = hostless_value.strip().lower() == 'true'
     else:
-        is_hostless = False
+        is_hostless = bool(hostless_value)
+
+    if is_hostless:
+        content.append("Hostless!")
 
     # Magnitude information
     if is_hostless:
@@ -755,7 +786,10 @@ def plot_host_information(sub_y, sub_x, sub_n, info_table):
     host_separation = info_table['host_separation'][0]
     content.append(f"Size = {host_radius:.2f}\"")
     content.append(f"Separation = {host_separation:.2f}\"")
-    content.append(f"Offset = {(host_separation/host_radius):.2f} Re")
+    if np.isfinite(host_radius) and host_radius > 0:
+        content.append(f"Offset = {(host_separation/host_radius):.2f} Re")
+    else:
+        content.append("Offset = -- Re")
     content.append("")
 
     # Light curve duration information
@@ -1180,7 +1214,7 @@ def plot_lightcurve(sub_y, sub_x, sub_n, input_table, info_table, subtract_phase
     used_filters : list
         List of filters used in the plot
     used_sources : list
-        List of sources used in the plot
+        List of source categories used in the plot
     """
 
     # Get transient information
@@ -1192,7 +1226,8 @@ def plot_lightcurve(sub_y, sub_x, sub_n, input_table, info_table, subtract_phase
     all_times = input_table['MJD']
     all_sigmas = input_table['MagErr']
     all_filters = input_table['Filter']
-    all_sources = input_table['Source']
+    all_sources = input_table['Source'] if 'Source' in input_table.colnames else np.array([''] * len(input_table), dtype=str)
+    all_telescopes = input_table['Telescope'] if 'Telescope' in input_table.colnames else np.array([''] * len(input_table), dtype=str)
     all_upperlimits = input_table['UL']
     all_ignores = input_table['Ignore']
     # If plotting the full range, use MJD as phase
@@ -1211,10 +1246,13 @@ def plot_lightcurve(sub_y, sub_x, sub_n, input_table, info_table, subtract_phase
     # Select Plot Colors
     all_colors = plot_colors(all_filters)
 
-    # Select groups of Data (detectiond and upper limits)
-    is_det_ztf = np.flatnonzero(np.isin(all_sources[detection], ['ZTF', 'Alerce']))
-    is_det_local = np.flatnonzero(np.isin(all_sources[detection], ['Local', 'FLWO']))
-    is_det_other = np.where(~np.isin(all_sources[detection], ['ZTF', 'Local', 'FLWO']))[0]
+    # Select groups of data. Source='Alerce' is ambiguous now because it can
+    # represent either ZTF or Rubin; use Telescope to separate them.
+    det_groups = photometry_source_indices(all_sources[detection], all_telescopes[detection])
+    is_det_ztf = det_groups['ztf']
+    is_det_rubin = det_groups['rubin']
+    is_det_local = det_groups['local']
+    is_det_other = det_groups['other']
 
     # Set plot limits to ± 0.5 the magnitude limits
     if full_range:
@@ -1259,12 +1297,16 @@ def plot_lightcurve(sub_y, sub_x, sub_n, input_table, info_table, subtract_phase
     # Plot detections
     plt.errorbar(all_phases[detection][is_det_ztf], all_magnitudes[detection][is_det_ztf], all_sigmas[detection][is_det_ztf],
                  ecolor=all_colors[detection][is_det_ztf], fmt='d', alpha=0.8, ms=0)
+    plt.errorbar(all_phases[detection][is_det_rubin], all_magnitudes[detection][is_det_rubin], all_sigmas[detection][is_det_rubin],
+                 ecolor=all_colors[detection][is_det_rubin], fmt='s', alpha=0.8, ms=0)
     plt.errorbar(all_phases[detection][is_det_local], all_magnitudes[detection][is_det_local], all_sigmas[detection][is_det_local],
                  ecolor=all_colors[detection][is_det_local], fmt='*', alpha=0.8, ms=0)
     plt.errorbar(all_phases[detection][is_det_other], all_magnitudes[detection][is_det_other], all_sigmas[detection][is_det_other],
                  ecolor=all_colors[detection][is_det_other], fmt='.', alpha=0.8, ms=0)
     plt.scatter(all_phases[detection][is_det_ztf], all_magnitudes[detection][is_det_ztf],
                 color=all_colors[detection][is_det_ztf], marker='d', alpha=0.8, s=90)
+    plt.scatter(all_phases[detection][is_det_rubin], all_magnitudes[detection][is_det_rubin],
+                color=all_colors[detection][is_det_rubin], marker='s', alpha=0.8, s=90)
     plt.scatter(all_phases[detection][is_det_local], all_magnitudes[detection][is_det_local],
                 color=all_colors[detection][is_det_local], marker='*', alpha=0.8, s=90)
     plt.scatter(all_phases[detection][is_det_other], all_magnitudes[detection][is_det_other],
@@ -1277,20 +1319,26 @@ def plot_lightcurve(sub_y, sub_x, sub_n, input_table, info_table, subtract_phase
 
     # Plot Ignored Data
     ignore_alpha = 0.15
-    # Select groups of Data (detectiond and upper limits)
-    was_det_ztf = np.flatnonzero(np.isin(all_sources[detect_ignore], ['ZTF', 'Alerce']))
-    was_det_local = np.flatnonzero(np.isin(all_sources[detect_ignore], ['Local', 'FLWO']))
-    was_det_other = np.where(~np.isin(all_sources[detect_ignore], ['ZTF', 'Local', 'FLWO']))[0]
+    # Select groups of ignored detections
+    ignored_groups = photometry_source_indices(all_sources[detect_ignore], all_telescopes[detect_ignore])
+    was_det_ztf = ignored_groups['ztf']
+    was_det_rubin = ignored_groups['rubin']
+    was_det_local = ignored_groups['local']
+    was_det_other = ignored_groups['other']
 
     # Plot ignored detections
     plt.errorbar(all_phases[detect_ignore][was_det_ztf], all_magnitudes[detect_ignore][was_det_ztf], all_sigmas[detect_ignore][was_det_ztf],
                  ecolor=all_colors[detect_ignore][was_det_ztf], fmt='d', alpha=ignore_alpha, ms=0)
+    plt.errorbar(all_phases[detect_ignore][was_det_rubin], all_magnitudes[detect_ignore][was_det_rubin], all_sigmas[detect_ignore][was_det_rubin],
+                 ecolor=all_colors[detect_ignore][was_det_rubin], fmt='s', alpha=ignore_alpha, ms=0)
     plt.errorbar(all_phases[detect_ignore][was_det_local], all_magnitudes[detect_ignore][was_det_local], all_sigmas[detect_ignore][was_det_local],
                  ecolor=all_colors[detect_ignore][was_det_local], fmt='*', alpha=ignore_alpha, ms=0)
     plt.errorbar(all_phases[detect_ignore][was_det_other], all_magnitudes[detect_ignore][was_det_other], all_sigmas[detect_ignore][was_det_other],
                  ecolor=all_colors[detect_ignore][was_det_other], fmt='.', alpha=ignore_alpha, ms=0)
     plt.scatter(all_phases[detect_ignore][was_det_ztf], all_magnitudes[detect_ignore][was_det_ztf],
                 color=all_colors[detect_ignore][was_det_ztf], marker='d', alpha=ignore_alpha, s=90)
+    plt.scatter(all_phases[detect_ignore][was_det_rubin], all_magnitudes[detect_ignore][was_det_rubin],
+                color=all_colors[detect_ignore][was_det_rubin], marker='s', alpha=ignore_alpha, s=90)
     plt.scatter(all_phases[detect_ignore][was_det_local], all_magnitudes[detect_ignore][was_det_local],
                 color=all_colors[detect_ignore][was_det_local], marker='*', alpha=ignore_alpha, s=90)
     plt.scatter(all_phases[detect_ignore][was_det_other], all_magnitudes[detect_ignore][was_det_other],
@@ -1310,18 +1358,20 @@ def plot_lightcurve(sub_y, sub_x, sub_n, input_table, info_table, subtract_phase
 
     plt.ylabel('Magnitude')
 
-    # Get filter information
-    used_filters, used_sources = np.unique(all_filters), np.unique(all_sources)
+    # Get filter information and representative wavelengths from the actual data.
+    used_filters = np.unique(all_filters)
+    all_groups = photometry_source_indices(all_sources, all_telescopes)
+    used_sources = []
+    if len(all_groups['ztf']) > 0:
+        used_sources.append('ZTF')
+    if len(all_groups['rubin']) > 0:
+        used_sources.append('Rubin')
+    if len(all_groups['local']) > 0:
+        used_sources.append('Local')
+    if len(all_groups['other']) > 0:
+        used_sources.append('Other')
 
-    # Define filter references and colors
-    # Define filter references for LSST and ZTF
-    if 'LSST' in used_sources:
-        wavelengths = np.array([lsst_refs[i] for i in used_filters])
-    elif np.all(used_sources == 'ZTF') or ('Alerce' in used_sources):
-        wavelengths = np.array([ztf_refs[i] for i in used_filters])
-    else:
-        wavelengths = np.array([generic_refs[i] for i in used_filters])
-        print("Unknown or multiple telescopes in data. Adopting generic central wavelenghts.")
+    wavelengths = get_filter_wavelengths(used_filters, input_table)
 
     # Plot fits to the data
     if plot_model and not full_range:
@@ -1364,7 +1414,7 @@ def plot_lightcurve(sub_y, sub_x, sub_n, input_table, info_table, subtract_phase
                     # Plot the model
                     model_data = model_mag(model_time, filter_wave, lc_width, lc_decline,
                                            phase_offset, mag_offset, initial_temp, cooling_rate)
-                    plt.plot(model_time, model_data, color=filter_colors[filter_name], linestyle=':', linewidth=0.5)
+                    plt.plot(model_time, model_data, color=plot_colors(str(filter_name)), linestyle=':', linewidth=0.5)
 
         # Add chi^2 legend
         chi2 = info_table['chi2'][0]
@@ -1544,18 +1594,22 @@ def plot_legend(sub_y, sub_x, sub_n, used_filters, used_sources):
     # Select Plot Colors
     all_colors = plot_colors(used_filters)
 
-    # Select groups of Data (detections and upper limits)
+    # Select groups of data source categories
+    used_sources = np.asarray(used_sources, dtype=str)
     is_det_ztf = np.flatnonzero(np.isin(used_sources, ['ZTF', 'Alerce']))
+    is_det_rubin = np.flatnonzero(np.isin(used_sources, ['Rubin', 'LSST']))
     is_det_local = np.flatnonzero(np.isin(used_sources, ['Local', 'FLWO']))
-    is_det_other = np.where(~np.isin(used_sources, ['ZTF', 'Local', 'FLWO']))[0]
+    is_det_other = np.where(~np.isin(used_sources, ['ZTF', 'Alerce', 'Rubin', 'LSST', 'Local', 'FLWO']))[0]
 
     plt.subplot(sub_y, sub_x, sub_n)
     if len(is_det_ztf) > 0:
         plt.scatter([], [], marker='d', alpha=1.0, s=90, color='k', label='ZTF')
+    if len(is_det_rubin) > 0:
+        plt.scatter([], [], marker='s', alpha=1.0, s=90, color='k', label='Rubin')
     if len(is_det_local) > 0:
         plt.scatter([], [], marker='*', alpha=1.0, s=90, color='k', label='Local')
     if len(is_det_other) > 0:
-        plt.scatter([], [], marker='o', alpha=1.0, s=90, color='k', label='OSC')
+        plt.scatter([], [], marker='o', alpha=1.0, s=90, color='k', label='Other')
 
     for i in range(len(used_filters)):
         plt.scatter([], [], marker='o', alpha=1.0, s=90, color=all_colors[i], label=used_filters[i])
@@ -2171,7 +2225,7 @@ def plot_purity_grid(training_days_arr, testing_days_arr, grouping, n_estimators
                     final_grid[i, j] = mean_purity[common_thresholds == prob_threshold][0]
             elif metric.lower() == 'completeness':
                 if np.iterable(mean_completeness):
-                    final_grid[i, j] = mean_purity[common_thresholds == prob_threshold][0]
+                    final_grid[i, j] = mean_completeness[common_thresholds == prob_threshold][0]
 
     # Create the plot
     plt.figure(figsize=(8, 8))
