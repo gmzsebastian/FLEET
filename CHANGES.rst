@@ -1,3 +1,10 @@
+3.1 (2026-05-09)
+----------------
+
+- Added support for LSST Rubin observations.
+- Updated light-curve handling for ZTF, Rubin, or combined survey data.
+- Updated plotting and classification workflows for Rubin/LSST data.
+
 3.0.1 (2026-02-19)
 ----------------
 

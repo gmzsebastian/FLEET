@@ -11,7 +11,7 @@ class InstallAndFetchDustMaps(install):
 
 
 setup(name='fleet_pipe',
-      version='3.0.1',
+      version='3.1',
       description='Finding Luminous and Exotic Extragalactic Transients',
       url='https://github.com/gmzsebastian/fleet',
       author=['Sebastian Gomez'],
